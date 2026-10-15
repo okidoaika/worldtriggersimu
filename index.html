@@ -1,0 +1,2295 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>戦闘シミュレーション演習</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
+<style>
+/* 演習端末: 上に両部隊の生存数、中央に演習場と設定欄、下にユニット一覧。数値の表は別タブに表計算の体裁で置く。 */
+:root {
+  color-scheme: dark;
+  --ink: #0e1920;        /* 地 */
+  --panel: #15242e;      /* 面 */
+  --panel-2: #1b2f3b;    /* 一段上の面 */
+  --line: #2a4150;       /* 罫 */
+  --fg: #e8f0f3;
+  --muted: #8fa5b2;
+  --signal: #ffc247;     /* 手番・主要ボタン */
+  --trion: #6fe3cf;      /* トリオン量 */
+  --danger: #ff6b6b;     /* 攻撃対象・エラー */
+  --on-signal: #1a1404;
+  --atk: #ff6b6b;        /* 攻撃の射程 */
+  --def: #5aa9ff;        /* 防御の範囲 */
+  --eva: #7fe3a1;        /* 回避の警戒範囲 */
+  --display: "Dela Gothic One", "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --data: "Chakra Petch", "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+}
+* { box-sizing: border-box; }
+body { background: var(--ink); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.6; }
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3, p { margin: 0; }
+h2 { font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.app { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ---- 上部 ---- */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.brand-sub { display: block; font-family: var(--data); font-size: 12px; letter-spacing: .22em; color: var(--trion); }
+.brand h1 { font-family: var(--display); font-weight: 400; font-size: clamp(22px, 4vw, 30px); line-height: 1.25; letter-spacing: .02em; }
+.tabs { display: flex; gap: 4px; background: var(--panel); padding: 4px; border-radius: 8px; }
+.tabs button { border: 0; background: transparent; padding: 7px 16px; border-radius: 5px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected="true"] { background: var(--signal); color: var(--on-signal); }
+
+.btn { border: 1px solid var(--line); background: var(--panel-2); padding: 7px 14px; border-radius: 6px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: var(--on-signal); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.quiet { background: transparent; }
+select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+.tabpage { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---- 得点帯 ---- */
+.scorebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.sq { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 10px; padding: 8px 12px; background: var(--panel); border-top: 3px solid var(--c); border-radius: 0 0 6px 6px; min-width: 0; }
+.sq-name { font-weight: 700; overflow-wrap: anywhere; }
+.sq-pts { grid-row: span 2; font-family: var(--data); font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.sq-pts small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.sq-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.pips { display: inline-flex; gap: 3px; }
+.pips i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.pips i.out { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); }
+.tag { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 3px; background: var(--signal); color: var(--on-signal); }
+.sq.gone { opacity: .55; }
+
+/* ---- 盤面と指示欄 ---- */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.boardwrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.boardhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.round { font-family: var(--data); font-size: 20px; font-weight: 700; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.round small { font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 10px; }
+.boardctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.boardctl label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+
+.boardscroll { overflow-x: auto; border-radius: 4px; }
+.board { --w: 22; --h: 16; position: relative; container-type: inline-size; width: 100%; min-width: calc(var(--w) * 20px); aspect-ratio: var(--w) / var(--h); background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; user-select: none; }
+.cells { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--w), 1fr); grid-template-rows: repeat(var(--h), 1fr); }
+.cell { position: relative; background: var(--t); box-shadow: inset 0 0 0 .5px rgba(8, 16, 22, .55); }
+.cell.hi { box-shadow: inset 0 0 0 .5px rgba(8, 16, 22, .55), inset 0 0 0 2px rgba(255, 255, 255, .13); }
+.cell b { position: absolute; left: 9%; top: 6%; font: 500 calc(100cqw / var(--w) * .3) var(--data); line-height: 1; color: rgba(255, 255, 255, .6); pointer-events: none; }
+.cell.wall { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, .08) 0 2px, transparent 2px 7px); }
+.cell.reach { cursor: pointer; }
+.cell.reach::before { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--signal) 17%, transparent); }
+.cell.reach:hover::before { background: color-mix(in srgb, var(--signal) 42%, transparent); }
+.cell.fa::after, .cell.fa0::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+.cell.fa::after { background: color-mix(in srgb, var(--atk) 38%, transparent); }
+.cell.fa0::after { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--atk) 30%, transparent) 0 2px, transparent 2px 6px); }
+
+.plan, .units, .fx { position: absolute; inset: 0; pointer-events: none; }
+.plan svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.plan .path { fill: none; stroke: var(--fg); stroke-width: .09; stroke-opacity: .55; stroke-linejoin: round; stroke-linecap: round; }
+.plan .path.cur { stroke: var(--signal); stroke-opacity: 1; stroke-width: .13; }
+.plan .chase { fill: none; stroke: var(--atk); stroke-width: .1; stroke-dasharray: .3 .22; }
+.plan .ghost { fill: color-mix(in srgb, var(--signal) 30%, transparent); stroke: var(--signal); stroke-width: .08; }
+.plan .arc-def { fill: none; stroke: var(--def); stroke-width: .16; stroke-linecap: round; }
+.plan .arc-eva { fill: none; stroke: var(--eva); stroke-width: .16; stroke-linecap: round; stroke-dasharray: .18 .2; }
+.plan .vis { fill: none; stroke: var(--fg); stroke-opacity: .28; stroke-width: .05; stroke-dasharray: .2 .2; }
+
+.unit { pointer-events: auto; position: absolute; width: calc(100% / var(--w) * .76); aspect-ratio: 1; transform: translate(-50%, -50%); border: 0; padding: 0; border-radius: 50%; background: var(--c); color: #0b151b; font-family: var(--body); font-weight: 900; font-size: calc(100cqw / var(--w) * .40); line-height: 1; display: grid; place-items: center; cursor: pointer; box-shadow: 0 0 0 2px var(--ink); transition: left .16s linear, top .16s linear; }
+.unit.foe { border-radius: 24%; }
+.unit sub { position: absolute; right: 3%; bottom: 0; font-family: var(--data); font-weight: 700; font-size: .56em; line-height: 1; }
+.unit .dir { position: absolute; inset: -20%; transform: rotate(calc(var(--f, 0) * 45deg)); pointer-events: none; transition: transform .12s; }
+.unit .dir::before { content: ""; position: absolute; left: 50%; top: 0; transform: translateX(-50%); border-style: solid; border-color: transparent transparent var(--fg); border-width: 0 calc(100cqw / var(--w) * .13) calc(100cqw / var(--w) * .17); filter: drop-shadow(0 0 1px var(--ink)); }
+.unit i { position: absolute; left: 6%; right: 6%; bottom: -26%; height: 13%; min-height: 3px; background: rgba(8, 16, 22, .85); border-radius: 2px; overflow: hidden; }
+.unit i b { display: block; height: 100%; background: var(--trion); }
+.unit.sel { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--signal); z-index: 3; }
+.unit.inspect:not(.sel) { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--fg); z-index: 2; }
+.unit.pickable { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--atk); z-index: 2; }
+.unit.planned::after { content: ""; position: absolute; left: -8%; top: -8%; width: 28%; aspect-ratio: 1; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 1.5px var(--ink); }
+.unit.cloak { opacity: .55; }
+.unit.blip { width: calc(100% / var(--w) * .32); border-radius: 2px; transform: translate(-50%, -50%) rotate(45deg); opacity: .85; }
+.unit.blip.pickable { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--atk); }
+
+.fx svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shot { stroke-linecap: round; animation: shot .45s ease-out forwards; }
+@keyframes shot { from { opacity: 1; } to { opacity: 0; } }
+.pop { position: absolute; transform: translate(-50%, -120%); font-family: var(--data); font-weight: 700; font-size: calc(100cqw / var(--w) * .46); color: var(--fg); text-shadow: 0 0 3px var(--ink), 0 1px 2px var(--ink), 0 0 6px var(--ink); white-space: nowrap; animation: pop .95s ease-out forwards; z-index: 5; }
+.pop.miss { color: var(--muted); font-family: var(--body); font-size: calc(100cqw / var(--w) * .34); }
+.pop.crit { color: var(--signal); font-size: calc(100cqw / var(--w) * .6); }
+.pop.leak { color: var(--trion); font-size: calc(100cqw / var(--w) * .34); }
+@keyframes pop { from { opacity: 0; margin-top: 6%; } 18% { opacity: 1; margin-top: 0; } 75% { opacity: 1; } to { opacity: 0; margin-top: -4%; } }
+.beam { position: absolute; top: 0; width: calc(100% / var(--w) * .42); transform: translateX(-50%) scaleY(0); transform-origin: bottom; background: linear-gradient(to top, var(--c), #fff 35%, color-mix(in srgb, var(--c) 50%, transparent) 80%, transparent); border-radius: 50% 50% 0 0 / 12% 12% 0 0; animation: beam .75s cubic-bezier(.2, .7, .2, 1) forwards; z-index: 4; }
+@keyframes beam { 0% { transform: translateX(-50%) scaleY(0); opacity: 1; } 45% { transform: translateX(-50%) scaleY(1); opacity: 1; } 100% { transform: translateX(-50%) scaleX(.15) scaleY(1); opacity: 0; } }
+.bailtext { position: absolute; transform: translate(-50%, -50%); font-family: var(--display); font-size: calc(100cqw / var(--w) * .5); color: #fff; text-shadow: 0 0 4px var(--ink), 0 0 10px var(--c); white-space: nowrap; animation: pop 1s ease-out forwards; z-index: 6; }
+
+.result { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: color-mix(in srgb, var(--ink) 82%, transparent); padding: 12px; overflow: auto; }
+.result-box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; max-width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.result-kicker { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.result-box h3 { font-family: var(--display); font-weight: 400; font-size: clamp(18px, 3.4vw, 26px); line-height: 1.3; text-wrap: balance; }
+.result-box h3 span { color: var(--c); }
+.result-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; background: var(--t); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel { background: var(--panel); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.who b { font-size: 18px; line-height: 1.3; }
+.chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 3px; background: var(--c, var(--panel-2)); color: #0b151b; line-height: 1.6; }
+.chip.plain { background: var(--panel-2); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+.hint { font-size: 13px; color: var(--muted); }
+.meter { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.meter .track { height: 8px; background: var(--ink); border-radius: 4px; overflow: hidden; }
+.meter .track b { display: block; height: 100%; background: var(--trion); }
+.meter .val { font-family: var(--data); font-size: 14px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.meter .val em { font-style: normal; color: var(--danger); margin-left: 6px; font-size: 12px; }
+.weapons { display: grid; gap: 6px; }
+.wbtn { text-align: left; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 7px 10px; cursor: pointer; display: grid; gap: 1px; }
+.wbtn[aria-pressed="true"] { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+.wbtn:disabled { opacity: .4; cursor: default; }
+.wbtn b { font-size: 14px; }
+.wbtn span { font-size: 12px; color: var(--muted); font-family: var(--data); }
+.preview { border-left: 3px solid var(--danger); padding: 4px 10px; background: var(--ink); border-radius: 0 6px 6px 0; font-size: 13px; }
+.preview strong { font-family: var(--data); font-size: 18px; font-variant-numeric: tabular-nums; }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.acts .btn { flex: 1 1 auto; }
+
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.stat { background: var(--ink); border-radius: 5px; padding: 5px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
+.stat span { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.stat b { font-family: var(--data); font-size: 16px; font-variant-numeric: tabular-nums; }
+.trigs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.trigs li { display: grid; grid-template-columns: 3.4em 1fr; gap: 8px; }
+.trigs li > span { color: var(--muted); font-size: 12px; }
+.trigs small { display: block; color: var(--muted); font-family: var(--data); font-size: 12px; }
+
+.log { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; max-height: 260px; overflow-y: auto; font-size: 13px; }
+.log li { padding-left: 10px; border-left: 2px solid var(--c, var(--line)); overflow-wrap: anywhere; }
+.log li.rd { border: 0; padding: 4px 0 0; font-family: var(--data); font-size: 12px; letter-spacing: .12em; color: var(--muted); }
+.log li.out { color: var(--signal); font-weight: 700; }
+.log li.dim { color: var(--muted); }
+
+/* ---- 試合設定・部隊状況 ---- */
+.setup { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field > span { font-size: 12px; color: var(--muted); }
+.picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 4px 12px 4px 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--muted); }
+.pick i { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--c); }
+.pick[aria-pressed="true"] { color: var(--fg); border-color: var(--c); }
+.pick[aria-pressed="true"] i { background: var(--c); }
+.setup-note { font-size: 12px; color: var(--danger); flex-basis: 100%; }
+
+.roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.rcard { background: var(--panel); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.rcard h3 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.rcard h3 i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.rrow { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) 76px; align-items: center; gap: 8px; border: 0; background: transparent; padding: 3px 4px; border-radius: 4px; cursor: pointer; text-align: left; width: 100%; }
+.rrow:hover { background: var(--panel-2); }
+.rrow .ps { font-family: var(--data); font-size: 12px; color: var(--muted); }
+.rrow .nm { overflow-wrap: anywhere; line-height: 1.35; }
+.rrow .nm small { display: block; color: var(--muted); font-size: 11px; }
+.rrow .tr { display: grid; gap: 2px; font-family: var(--data); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.rrow .tr .track { height: 5px; background: var(--ink); border-radius: 3px; overflow: hidden; }
+.rrow .tr .track b { display: block; height: 100%; background: var(--trion); }
+.rrow.out { opacity: .45; }
+
+/* ---- データ表 ---- */
+.datahead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
+.datahead p { max-width: 60ch; color: var(--muted); }
+.datahead h2, .verifyhead h2 { font-family: var(--display); font-weight: 400; font-size: 20px; letter-spacing: .02em; color: var(--fg); }
+.databtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.applybar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; border-radius: 8px; background: var(--panel); border-left: 3px solid var(--line); }
+.applybar.dirty { border-left-color: var(--signal); }
+.applybar .msg { flex: 1 1 220px; min-width: 0; }
+.errors { margin: 0; padding: 10px 14px 10px 30px; background: color-mix(in srgb, var(--danger) 14%, var(--panel)); border-radius: 8px; color: var(--fg); }
+.sheettabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); }
+.sheettabs button { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 6px 14px; border-radius: 6px 6px 0 0; cursor: pointer; color: var(--muted); font-weight: 700; }
+.sheettabs button[aria-selected="true"] { background: var(--panel); border-color: var(--line); color: var(--fg); margin-bottom: -1px; }
+.sheettabs button small { font-family: var(--data); font-weight: 500; margin-left: 6px; color: var(--muted); }
+.sheetnote { color: var(--muted); font-size: 13px; }
+.sheetwrap { overflow: auto; max-height: 68vh; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.sheet { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.sheet th, .sheet td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0; }
+.sheet thead th { position: sticky; top: 0; z-index: 2; background: var(--panel-2); padding: 6px 8px; text-align: left; font-size: 12px; white-space: nowrap; }
+.sheet th.rn { position: sticky; left: 0; z-index: 1; background: var(--panel-2); color: var(--muted); font-family: var(--data); font-weight: 500; font-size: 11px; text-align: center; min-width: 30px; padding: 0 4px; }
+.sheet thead th.rn { z-index: 3; }
+.sheet td input { display: block; width: 100%; min-width: var(--cw, 6em); border: 0; background: transparent; padding: 5px 8px; border-radius: 0; }
+.sheet td input:focus { outline: 2px solid var(--signal); outline-offset: -2px; background: var(--ink); }
+.sheet td.n input { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums; }
+.sheet td.m input { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .12em; }
+.sheet td.c { position: relative; }
+.sheet td.c input { padding-left: 26px; font-family: var(--data); }
+.sheet td.c i { position: absolute; left: 7px; top: 50%; width: 13px; height: 13px; margin-top: -6.5px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); pointer-events: none; }
+.sheet td.x { border-right: 0; }
+.sheet .del { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 3px 9px; font-size: 15px; line-height: 1; }
+.sheet .del:hover { color: var(--danger); }
+.rowbtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.copybox { width: 100%; min-height: 120px; background: var(--ink); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+details.help { background: var(--panel); border-radius: 8px; padding: 10px 14px; }
+details.help summary { cursor: pointer; font-weight: 700; }
+details.help dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 8px 0 0; font-size: 13px; }
+details.help dt { font-weight: 700; }
+details.help dd { margin: 0; color: var(--muted); }
+
+/* ---- 検証 ---- */
+.verifyhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
+.verifyhead p { max-width: 62ch; color: var(--muted); }
+.verifyctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.empty { padding: 26px 18px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+.tblwrap { overflow-x: auto; }
+.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tbl th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 6px 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); white-space: nowrap; }
+.tbl .n { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums; }
+.tbl .nmcell { display: flex; align-items: center; gap: 8px; }
+.tbl .nmcell i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+.rate { display: grid; grid-template-columns: 3.4em minmax(80px, 1fr); align-items: center; gap: 8px; }
+.rate span { font-family: var(--data); text-align: right; font-variant-numeric: tabular-nums; }
+.rate .track { height: 10px; background: var(--ink); border-radius: 2px; overflow: hidden; }
+.rate .track b { display: block; height: 100%; background: var(--c); }
+#verifyOut { display: flex; flex-direction: column; gap: 12px; }
+.summary { color: var(--muted); font-size: 13px; }
+
+.foot { color: var(--muted); font-size: 12px; max-width: 80ch; }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .tabs { width: 100%; }
+  .tabs button { flex: 1; padding-inline: 6px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scorebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sq-pts { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit { transition: none; }
+  .unit .dir { transition: none; }
+}
+
+/* ---- 演習画面 ---- */
+.versus { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.side-card { background: var(--panel); border-top: 3px solid var(--c); border-radius: 0 0 6px 6px; padding: 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; align-items: center; min-width: 0; }
+.side-card .nm { font-weight: 700; overflow-wrap: anywhere; }
+.side-card .cnt { grid-row: span 2; font-family: var(--data); font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.side-card .cnt small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.side-card .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--muted); }
+.mid-card { background: var(--panel); border-radius: 6px; padding: 8px 14px; display: grid; place-items: center; text-align: center; gap: 2px; }
+.mid-card .turn { font-family: var(--data); font-size: 20px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+.mid-card .state { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.mid-card .state.win { color: var(--signal); font-weight: 700; }
+.phasebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.phase { font-weight: 700; font-size: 16px; }
+.phase small { font-weight: 500; font-size: 13px; color: var(--muted); margin-left: 10px; }
+.slotrow { display: grid; grid-template-columns: 3.2em minmax(0, 1fr); gap: 8px; align-items: start; }
+.slotrow > span { font-size: 12px; color: var(--muted); padding-top: 8px; }
+.slotrow .weapons { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.wbtn.atk { border-left: 3px solid var(--atk); }
+.wbtn.def { border-left: 3px solid var(--def); }
+.wbtn.eva { border-left: 3px solid var(--eva); }
+.facing { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.pad { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 34px); gap: 3px; }
+.pad button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 5px; cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+.pad button[aria-pressed="true"] { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
+.pad span { display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.steps { margin: 0; padding: 0 0 0 1.4em; font-size: 13px; color: var(--muted); display: grid; gap: 1px; }
+.btn.on { background: var(--atk); border-color: var(--atk); color: #1b0a0a; }
+.skills { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
+.skills b { margin-right: 6px; }
+.skills span { color: var(--muted); font-size: 12px; }
+.stats7 { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 6px; }
+.roster { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.rcard { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 12px; }
+.rcard h3 { grid-column: 1 / -1; margin-bottom: 4px; }
+.rrow { grid-template-columns: 2.2em minmax(0, 1fr) 92px; }
+.rrow .tr { white-space: nowrap; }
+.rrow.sel { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--signal); }
+.rrow .tr em { font-style: normal; color: var(--signal); }
+.legend .k { width: 18px; height: 4px; border-radius: 2px; box-shadow: none; }
+.rules-note { font-size: 12px; color: var(--muted); }
+@media (max-width: 620px) {
+  .versus { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .mid-card { grid-column: 1 / -1; grid-row: 1; }
+  .roster { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- 行動の再生 ---- */
+.replay { background: var(--panel); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; border-left: 3px solid var(--trion); }
+.replay #rpCtl { display: grid; gap: 8px; }
+.rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rp-label { font-weight: 700; margin-right: 4px; }
+.rp-sub { font-size: 12px; color: var(--muted); }
+.rp-turns { display: flex; flex-wrap: wrap; gap: 4px; }
+.rp-turn { min-width: 34px; height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; cursor: pointer; font-family: var(--data); font-weight: 700; font-size: 15px; }
+.rp-turn:hover { border-color: var(--muted); }
+.rp-turn[aria-pressed="true"] { background: var(--trion); border-color: var(--trion); color: #06231f; }
+.rp-row input[type="range"] { flex: 1 1 200px; min-width: 0; accent-color: var(--trion); }
+.rp-pos { font-family: var(--data); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#rpExit { margin-left: auto; }
+.btn.mini { padding: 3px 12px; font-size: 13px; }
+</style>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="brand-sub" id="brandSub">長期遠征選抜試験 課題</span>
+      <h1 id="brandTitle">戦闘シミュレーション演習</h1>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="画面の切り替え">
+      <button type="button" role="tab" id="tabbtn-match" data-tab="match" aria-selected="true">演習</button>
+      <button type="button" role="tab" id="tabbtn-data" data-tab="data" aria-selected="false">データ表</button>
+      <button type="button" role="tab" id="tabbtn-league" data-tab="league" aria-selected="false">総当たり</button>
+    </nav>
+  </header>
+
+  <section class="tabpage" id="tab-match" role="tabpanel" aria-labelledby="tabbtn-match">
+    <div class="versus" id="versus"></div>
+
+    <div class="stage">
+      <div class="boardwrap">
+        <div class="phasebar">
+          <div class="phase" id="phaseLabel"></div>
+          <div class="boardctl">
+            <label for="speedSel">速さ
+              <select id="speedSel">
+                <option value="1.8">ゆっくり</option>
+                <option value="1" selected>ふつう</option>
+                <option value="0.4">はやい</option>
+              </select>
+            </label>
+            <button type="button" class="btn quiet" id="autoAllBtn">全員おまかせ</button>
+            <button type="button" class="btn primary" id="goBtn">行動開始</button>
+          </div>
+        </div>
+        <div class="boardscroll">
+          <div class="board" id="board">
+            <div class="cells" id="cells"></div>
+            <div class="plan"><svg id="plansvg" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+            <div class="units" id="units"></div>
+            <div class="fx" id="fx"><svg id="fxsvg" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+            <div class="result" id="result" hidden></div>
+          </div>
+        </div>
+        <div class="replay" id="rpBar" hidden>
+          <div class="rp-row" id="rpIdle">
+            <span class="rp-label">行動の再生</span>
+            <span class="rp-sub">ターン</span>
+            <div class="rp-turns" id="rpIdleTurns"></div>
+            <button type="button" class="btn" data-rp="all">最初から通して再生</button>
+          </div>
+          <div id="rpCtl" hidden>
+            <div class="rp-row">
+              <button type="button" class="btn primary" id="rpToggle" data-rp="toggle">再生</button>
+              <button type="button" class="btn" data-rp="step">1アクション進む</button>
+              <button type="button" class="btn quiet" data-rp="first">最初へ</button>
+              <span class="rp-sub">ターン</span>
+              <div class="rp-turns" id="rpTurns"></div>
+              <button type="button" class="btn quiet" id="rpExit" data-rp="exit">再生を終える</button>
+            </div>
+            <div class="rp-row">
+              <input type="range" id="rpRange" min="0" max="1" value="0" step="1" aria-label="再生位置">
+              <span class="rp-pos" id="rpPos"></span>
+            </div>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <button type="button" class="btn quiet" id="skipBtn" style="align-self:flex-start">残りをAIに任せて結果を見る</button>
+      </div>
+
+      <aside class="side">
+        <div class="panel" id="cmdPanel"></div>
+        <div class="panel" id="infoPanel"></div>
+        <div class="panel">
+          <h2>行動ログ</h2>
+          <ol class="log" id="log"></ol>
+        </div>
+      </aside>
+    </div>
+
+    <div class="panel setup" id="setup">
+      <div class="field">
+        <span>演習</span>
+        <select id="exSel" aria-label="演習"></select>
+      </div>
+      <div class="field">
+        <span>自分の部隊</span>
+        <select id="teamASel" aria-label="自分の部隊"></select>
+      </div>
+      <div class="field">
+        <span>相手の部隊</span>
+        <select id="teamBSel" aria-label="相手の部隊"></select>
+      </div>
+      <div class="field" id="helpField">
+        <span id="helpLabel">ヘルプユニット</span>
+        <div class="picks" id="helpPicks"></div>
+      </div>
+      <div class="field">
+        <span>操作</span>
+        <select id="controlSel" aria-label="操作">
+          <option value="A">自分で設定する</option>
+          <option value="none">観戦(両方AI)</option>
+        </select>
+      </div>
+      <button type="button" class="btn primary" id="startBtn">この設定で新しい試合</button>
+      <p class="rules-note" id="exNote" style="flex-basis:100%"></p>
+    </div>
+
+    <div class="roster" id="roster"></div>
+  </section>
+
+  <section class="tabpage" id="tab-data" role="tabpanel" aria-labelledby="tabbtn-data" hidden>
+    <div class="datahead">
+      <div>
+        <h2>データ表</h2>
+        <p>数値と名称はすべてこの表から読み込みます。セルを直接書き換えるか、Excel やスプレッドシートで編集した範囲をそのまま貼り付けてください。</p>
+      </div>
+      <div class="databtns">
+        <label class="btn filebtn" id="importLabel">Excelファイルを読み込む<input type="file" id="importFile" accept=".xlsx,.xls,.csv"></label>
+        <button type="button" class="btn" id="exportBtn" hidden>Excelファイルに書き出す</button>
+        <button type="button" class="btn quiet" id="resetBtn">初期値に戻す</button>
+      </div>
+    </div>
+    <div class="applybar" id="applybar">
+      <span class="msg" id="applyMsg"></span>
+      <button type="button" class="btn primary" id="applyBtn">変更を反映して新しい試合</button>
+      <button type="button" class="btn quiet" id="revertBtn">変更を取り消す</button>
+    </div>
+    <ul class="errors" id="errors" hidden></ul>
+    <div class="sheettabs" id="sheetTabs" role="tablist" aria-label="表の切り替え"></div>
+    <p class="sheetnote" id="sheetNote"></p>
+    <div class="sheetwrap"><table class="sheet" id="sheet"></table></div>
+    <div class="rowbtns">
+      <button type="button" class="btn" id="addRowBtn">行を追加</button>
+      <button type="button" class="btn" id="copyBtn">この表をコピー</button>
+      <span class="hint" id="copyMsg"></span>
+    </div>
+    <textarea class="copybox" id="copyBox" aria-label="コピー用の表データ" hidden readonly></textarea>
+    <details class="help" id="colHelpWrap" open>
+      <summary>列の説明</summary>
+      <dl id="colHelp"></dl>
+    </details>
+  </section>
+
+  <section class="tabpage" id="tab-league" role="tabpanel" aria-labelledby="tabbtn-league" hidden>
+    <div class="verifyhead">
+      <div>
+        <h2>総当たり</h2>
+        <p>いま反映されている表の数値で、全部隊の総当たり戦をAIどうしで行い、順位表を出します。数値を変えたあとのバランス確認にも使えます。ヘルプユニットは毎試合ランダムに選びます。</p>
+      </div>
+      <div class="verifyctl">
+        <select id="leagueEx" aria-label="演習"></select>
+        <label for="leagueN" class="hint">回数</label>
+        <select id="leagueN">
+          <option value="1" selected>1巡</option>
+          <option value="3">3巡</option>
+          <option value="10">10巡</option>
+        </select>
+        <button type="button" class="btn primary" id="leagueBtn">総当たりを実施</button>
+      </div>
+    </div>
+    <div id="leagueOut"></div>
+  </section>
+
+  <p class="foot">原作「長期遠征選抜試験」の戦闘シミュレーション演習を参考にした非公式のファン作品です。原作で示されていない計算式や数値(命中・ダメージの決まり方、各トリガーの性能、多くのユニットの能力値)は、このゲーム用に置いた仮のものです。編集した表はこのブラウザにだけ保存されます。</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* 初期データと表の定義。ゲーム内エディタ・Excel入出力・戦闘エンジンはすべてこの定義を共有する。 */
+(function (root, factory) {
+  const D = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = D;
+  else root.SIM_DATA = D;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  // 列の型: text / num / color
+  const SCHEMA = [
+    {
+      name: 'ルール', note: '進行と計算式の係数。「項目」は変えず「値」だけを調整します。',
+      cols: [['項目', 'text', '計算式が参照する名前(変更不可)'], ['値', 'num', '調整する数値'], ['説明', 'text', 'メモ。ゲームには影響しません']],
+    },
+    {
+      name: '用語', note: '画面に出る言葉。「表示名」を変えると画面の表記が変わります。',
+      cols: [['キー', 'text', '内部の名前(変更不可)'], ['表示名', 'text', '画面に出す言葉'], ['説明', 'text', 'メモ']],
+    },
+    {
+      name: '演習', note: '演習ごとの得点・ユニット数・勝利条件。',
+      cols: [['ID', 'text', ''], ['名称', 'text', ''], ['勝ち', 'num', '勝利時の得点'], ['引き分け', 'num', '引き分け時の得点'], ['負け', 'num', '敗北時の得点'],
+        ['基本ユニット', 'num', '隊員1人あたりのユニット数'], ['ヘルプ数', 'num', '組み込めるヘルプユニットの数'], ['ヘルプ候補', 'text', 'ユニットIDをカンマ区切りで'],
+        ['勝利条件', 'num', '終了時の生存ユニット数にこの数以上の差で勝ち'], ['ターン数', 'num', '1試合のターン数'], ['マップ', 'text', 'マップ表のマップ名']],
+    },
+    {
+      name: '部隊', note: '臨時部隊。',
+      cols: [['ID', 'text', 'ユニット表から参照するID'], ['名称', 'text', ''], ['略称', 'text', '短い表記'], ['色', 'color', '#から始まる色コード']],
+    },
+    {
+      name: 'ユニット', note: '隊員ユニットの能力値・トリガー構成・スキル。部隊が空欄のユニットはヘルプユニット用です。',
+      cols: [['ID', 'text', ''], ['名前', 'text', ''], ['表示', 'text', '駒に出す1文字'], ['部隊', 'text', '部隊ID。空欄ならヘルプ専用'], ['ポジション', 'text', '表示用(AT/GN/SH/SN/AR など)'],
+        ['行動力', 'num', '1ターンに使える量。移動・攻撃・防御で消費'], ['トリオン', 'num', '射撃の威力とシールドの防御力'], ['攻撃', 'num', 'ブレードの威力'], ['防御', 'num', '耐久値と被ダメージ軽減'],
+        ['回避', 'num', '回避率'], ['援護', 'num', '1ターンの連携発動回数'], ['技術', 'num', '狙撃の威力、相手の回避率を下げる'],
+        ['メイン1', 'text', 'トリガーID'], ['メイン2', 'text', 'トリガーID(空欄可)'], ['サブ1', 'text', 'トリガーID(空欄可)'], ['サブ2', 'text', 'トリガーID(空欄可)'], ['サブ3', 'text', 'トリガーID(空欄可)'],
+        ['スキル', 'text', 'スキルIDをカンマ区切りで'], ['備考', 'text', '数値の出どころなどのメモ']],
+    },
+    {
+      name: 'トリガー', note: 'トリガーの性能。分類は 近接/射撃/狙撃/防御/回避/移動 のいずれか。射程は扇形で、角度は扇の開き。',
+      cols: [['ID', 'text', 'ユニット表から参照するID'], ['名称', 'text', ''], ['分類', 'text', '近接/射撃/狙撃/防御/回避/移動'],
+        ['威力', 'num', '攻撃:基礎威力 防御:軽減率% 回避:回避率に加える%'], ['最小射程', 'num', 'これより近い敵は狙えない'], ['射程', 'num', '扇の半径(マス)'], ['角度', 'num', '扇の開き(度)。360で全周'],
+        ['基礎命中', 'num', '命中率%(攻撃のみ)'], ['行動力', 'num', '攻撃:1回の消費 防御:1回防ぐごとの消費 回避:起動時の消費'], ['待ち時間', 'num', '使用後に動けないアクション数'],
+        ['参照', 'text', '威力や防御力に掛かる能力値(攻撃/トリオン/技術/防御)'], ['爆発範囲', 'num', '1以上で対象の周囲の敵も巻き込む'],
+        ['効果', 'text', '空欄/射線無視/鈍足/レーダー非表示/透明/登り強化'], ['効果値', 'num', '鈍足:減らす行動力 透明:見つかる距離 登り強化:一度に上れる段数'], ['説明', 'text', 'メモ']],
+    },
+    {
+      name: 'スキル', note: 'スキルの効果。1つのスキルに効果が複数あるときは同じIDで行を分けます。',
+      cols: [['ID', 'text', 'ユニット表から参照するID'], ['名称', 'text', ''],
+        ['効果', 'text', '行動力/攻撃消費/起動消費/威力/命中/射程/爆発範囲/威力ぶれ/近距離強化/必中/即離脱/回避/全方位回避/防御/防御待ち無効/足止め/連携/先制/索敵'],
+        ['対象', 'text', '空欄=すべて、分類名、またはトリガーID。行動力は「そのトリガーを装備していれば」の条件'], ['値', 'num', '効果の大きさ'], ['値2', 'num', '効果によって使う2つ目の値'], ['説明', 'text', 'メモ']],
+    },
+    {
+      name: '地形', note: 'マップの記号と性質。記号は半角1文字。',
+      cols: [['記号', 'text', 'マップ表で使う1文字'], ['名称', 'text', ''], ['高さ', 'num', '段数。視界と射線、上り下りに影響'], ['進入可', 'num', '0で進入不可'], ['色', 'color', '#から始まる色コード']],
+    },
+    {
+      name: 'マップ', note: '1行が盤面の1段。「地形データ」に地形の記号を横に並べます(全行同じ文字数)。左端が自部隊、右端が相手部隊の初期配置。',
+      cols: [['マップ', 'text', 'マップ名'], ['行', 'num', '上から何段目か'], ['地形データ', 'text', '地形の記号を左から並べた文字列']],
+    },
+  ];
+
+  const rows = (cols, list) => list.map(r => { const o = {}; cols.forEach((c, i) => { o[c] = r[i] === undefined ? '' : r[i]; }); return o; });
+
+  // 十字路を中心に民家・ビル・工場が並ぶ演習場。数字は建物の高さ。
+  const BASE_MAP = [
+    '......................',
+    '.22.13.24...246.22.1..',
+    '.22.33.44...446.22.1..',
+    '............446.......',
+    '.11.223.2........13.2.',
+    '.11.223.2....11..33.2.',
+    '......................',
+    '......................',
+    '......................',
+    '......................',
+    '.13.22..1....22.1.133.',
+    '.33.22..1....22.1.333.',
+    '..................333.',
+    '.2.2444.2....24.......',
+    '.2.4444.2....44.22.11.',
+    '......................',
+  ];
+  // 外周の住宅地。左端・右端の3列ぶん
+  const EDGE_L = ['...', '.2.', '.2.', '...', '.1.', '...', '...', '...', '...', '...', '.1.', '...', '.2.', '.2.', '...', '...'];
+  const EDGE_R = ['...', '.1.', '...', '...', '.2.', '.2.', '...', '...', '...', '...', '.2.', '.2.', '...', '.1.', '...', '...'];
+  const pad = (map, px, py) => {
+    const w = map[0].length + px * 2, blank = '.'.repeat(w);
+    return [].concat(Array(py).fill(blank), map.map(r => '.'.repeat(px) + r + '.'.repeat(px)), Array(py).fill(blank));
+  };
+  const MAP1 = pad(BASE_MAP.map((r, i) => EDGE_L[i] + r + EDGE_R[i]), 0, 1);
+  const mapRows = (name, map) => map.map((s, i) => [name, i + 1, s]);
+
+  const W = 'wiki掲載値', P = '一部wiki掲載値、ほかは仮', K = '仮の値';
+  const U = ['ID', '名前', '表示', '部隊', 'ポジション', '行動力', 'トリオン', '攻撃', '防御', '回避', '援護', '技術', 'メイン1', 'メイン2', 'サブ1', 'サブ2', 'サブ3', 'スキル', '備考'];
+
+  const TABLES = {
+    'ルール': rows(['項目', '値', '説明'], [
+      ['設定時間', 0, '動きの設定の制限時間(秒)。0で無制限。原作は150'],
+      ['最大アクション', 40, '1ターンの行動を打ち切るアクション数'],
+      ['最大段差', 2, '一度に上れる段数'],
+      ['登り強化係数', 0.5, '登り強化のあるユニットが段差を上るときの行動力の倍率(切り上げ)'],
+      ['足踏み上限', 2, '進む先が塞がっているとき、このアクション数待って移動を諦める'],
+      ['追跡予約', 1, '1=追跡移動中は攻撃1回分の行動力を残す / 0=残さない'],
+      ['基礎視界', 7, '視界の半径(マス)'],
+      ['高所視界', 1, '高さ1段ごとに視界を広げるマス数'],
+      ['初期配置列数', 4, '左右の端から何列を初期配置に使うか'],
+      ['基礎耐久', 140, '耐久値 = 基礎耐久 + 防御×耐久防御係数'],
+      ['耐久防御係数', 8, ''],
+      ['威力係数', 0.07, 'ダメージ = 威力 × (1 + 参照する能力値×威力係数)'],
+      ['乱数幅', 10, 'ダメージのぶれ ±%'],
+      ['基礎回避', 10, '回避率% = 基礎回避 + 回避×回避係数 − 相手の技術×技術係数 + 回避トリガーの威力'],
+      ['回避係数', 4, ''],
+      ['技術係数', 2, ''],
+      ['最大回避', 80, '回避率の上限%'],
+      ['防御軽減係数', 1, '防御1につき常に軽減する%'],
+      ['シールド係数', 0.03, 'シールドの軽減率 = 威力 × (1 + 参照する能力値×シールド係数)'],
+      ['最大軽減', 85, '軽減率の上限%'],
+      ['連携援護係数', 0.5, '1ターンの連携回数 = 切り捨て(援護×連携援護係数)'],
+    ]),
+    '用語': rows(['キー', '表示名', '説明'], [
+      ['タイトル', '戦闘シミュレーション演習', '画面左上のタイトル'],
+      ['サブタイトル', '長期遠征選抜試験 課題', 'タイトルの上の小さな表記'],
+      ['行動力', '行動力', '能力値'],
+      ['トリオン', 'トリオン', '能力値'],
+      ['攻撃', '攻撃', '能力値'],
+      ['防御', '防御', '能力値'],
+      ['回避', '回避', '能力値'],
+      ['援護', '援護', '能力値'],
+      ['技術', '技術', '能力値'],
+      ['耐久', '耐久', 'ユニットの残り体力'],
+      ['離脱', 'ベイルアウト', '戦闘不能になって退場すること'],
+      ['待ち時間', '待ち時間', ''],
+      ['ターン', 'ターン', ''],
+      ['設定', '動きの設定', '各ターン前半'],
+      ['行動', 'ユニットの行動', '各ターン後半'],
+      ['追跡', '追跡移動', ''],
+      ['ヘルプ', 'ヘルプユニット', ''],
+      ['連携', '連携', ''],
+    ]),
+    '演習': rows(['ID', '名称', '勝ち', '引き分け', '負け', '基本ユニット', 'ヘルプ数', 'ヘルプ候補', '勝利条件', 'ターン数', 'マップ'], [
+      ['E1', '戦闘シミュレーション演習①', 50, 10, 0, 2, 1, 'TACHIKAWA,KAZAMA,TOMA,IZUMI', 2, 6, '演習場①'],
+      ['E2', '戦闘シミュレーション演習②', 100, 20, 0, 3, 2, 'SAEKI,SATOMI,MIDORIKAWA,UNO,ARASHIYAMA,SATORI,TOKIEDA', 3, 6, '演習場②'],
+      ['E3', '戦闘シミュレーション演習③', 200, 40, 0, 5, 4, 'KAKO,KUROE,MIWA,YONEYA,NARASAKA,KATAGIRI,ICHIJO,MOMOZONO,NASU', 4, 6, '演習場③'],
+    ]),
+    '部隊': rows(['ID', '名称', '略称', '色'], [
+      ['S1', '歌川1番隊', '歌川1', '#4fc3f7'],
+      ['S2', '王子2番隊', '王子2', '#f48fb1'],
+      ['S3', '柿崎3番隊', '柿崎3', '#ff8a65'],
+      ['S4', '北添4番隊', '北添4', '#ffd54f'],
+      ['S5', '来馬5番隊', '来馬5', '#a5d6a7'],
+      ['S6', '古寺6番隊', '古寺6', '#80cbc4'],
+      ['S7', '諏訪7番隊', '諏訪7', '#ffb74d'],
+      ['S8', '二宮8番隊', '二宮8', '#b39ddb'],
+      ['S9', '水上9番隊', '水上9', '#81d4fa'],
+      ['S10', '村上10番隊', '村上10', '#e6ee9c'],
+      ['S11', '若村11番隊', '若村11', '#ef9a9a'],
+    ]),
+    'ユニット': rows(U, [
+      ['UTAGAWA', '歌川', '歌', 'S1', 'AR', 16, 7, 7, 7, 7, 8, 8, 'SCORPION', 'ASTEROID', 'SHIELD', 'CHAMELEON', '', 'CHAMELEON_APT', K],
+      ['KUGA', '空閑', '空', 'S1', 'AT', 18, 7, 9, 6, 9, 7, 8, 'SCORPION', '', 'SHIELD', 'SCORPION', 'GRASSHOPPER', 'SCORPION_APT', K],
+      ['URUSHIMA', '漆間', '漆', 'S1', 'GN', 15, 6, 7, 6, 8, 5, 8, 'PISTOL', '', 'SHIELD', 'BAGWORM', '', '', K],
+      ['TOMOE', '巴', '巴', 'S1', 'AR', 16, 5, 6, 6, 7, 7, 6, 'KOGETSU', 'PISTOL', 'SHIELD', '', '', '', K],
+      ['OJI', '王子', '王', 'S2', 'AT', 17, 6, 7, 6, 8, 8, 8, 'KOGETSU', 'HOUND', 'SHIELD', '', '', '', K],
+      ['IKOMA', '生駒', '生', 'S2', 'AT', 15, 7, 10, 7, 6, 6, 9, 'KOGETSU', 'SENKU', 'SHIELD', '', '', 'KOGETSU_APT', K],
+      ['OBISHIMA', '帯島', '帯', 'S2', 'AR', 16, 6, 6, 6, 7, 7, 7, 'KOGETSU', 'HOUND', 'SHIELD', '', '', '', K],
+      ['TSUJI', '辻', '辻', 'S2', 'AT', 16, 6, 8, 8, 7, 9, 8, 'KOGETSU', 'SENKU', 'SHIELD', '', '', '', K],
+      ['KAKIZAKI', '柿崎', '柿', 'S3', 'AR', 15, 7, 7, 8, 5, 8, 7, 'KOGETSU', 'RIFLE', 'SHIELD', '', '', '', K],
+      ['KAGEURA', '影浦', '影', 'S3', 'AT', 17, 8, 10, 7, 9, 4, 8, 'SCORPION', '', 'SHIELD', 'SCORPION', '', 'INTUITION,SCORPION_APT', K],
+      ['INUKAI', '犬飼', '犬', 'S3', 'GN', 15, 8, 8, 8, 7, 9, 8, 'RIFLE', 'RIFLE_H', 'SHIELD', '', '', '', K],
+      ['BETSUYAKU', '別役', '別', 'S3', 'SN', 13, 5, 4, 4, 5, 5, 5, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', 'UNSTABLE_SNIPE', K],
+      ['KITAZOE', '北添', '北', 'S4', 'GN', 14, 9, 8, 8, 4, 7, 7, 'RIFLE', 'GRENADE', 'SHIELD', '', '', 'GRENADE_APT', K],
+      ['TONOOKA', '外岡', '外', 'S4', 'SN', 14, 6, 7, 5, 6, 6, 8, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', '', K],
+      ['KIKUCHIHARA', '菊地原', '菊', 'S4', 'AT', 17, 4, 7, 6, 8, 8, 8, 'SCORPION', '', 'SHIELD', 'CHAMELEON', '', 'HEARING,CHAMELEON_APT', K],
+      ['MINAMISAWA', '南沢', '南', 'S4', 'AT', 17, 5, 7, 5, 8, 5, 6, 'KOGETSU', 'SENKU', 'SHIELD', 'GRASSHOPPER', '', 'SWIFT', K],
+      ['KURUMA', '来馬', '来', 'S5', 'GN', 14, 7, 6, 8, 5, 8, 7, 'RIFLE', 'RIFLE_H', 'SHIELD', '', '', '', K],
+      ['HOKARI', '穂刈', '穂', 'S5', 'SN', 14, 6, 8, 6, 6, 7, 8, 'EGRET', 'IBIS', 'SHIELD', 'BAGWORM', '', '', K],
+      ['KOARAI', '小荒井', '小', 'S5', 'AT', 17, 5, 7, 6, 8, 7, 7, 'KOGETSU', 'SENKU', 'SHIELD', 'GRASSHOPPER', '', '', K],
+      ['YUBA', '弓場', '弓', 'S5', 'GN', 16, 8, 10, 7, 8, 6, 9, 'PISTOL', '', 'PISTOL', 'SHIELD', '', 'QUICKDRAW,TWIN_PISTOL,PISTOL_APT', K],
+      ['KODERA', '古寺', '古', 'S6', 'SN', 14, 6, 7, 6, 6, 8, 9, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', 'PRECISE_SNIPE', K],
+      ['OKUDERA', '奥寺', '奥', 'S6', 'AT', 17, 5, 7, 7, 8, 7, 7, 'KOGETSU', 'SENKU', 'SHIELD', 'GRASSHOPPER', '', '', K],
+      ['MIURA', '三浦', '浦', 'S6', 'AT', 16, 5, 7, 7, 7, 8, 7, 'KOGETSU', 'SENKU', 'SHIELD', '', '', '', K],
+      ['KITORA', '木虎', '木', 'S6', 'AR', 17, 4, 8, 6, 7, 7, 9, 'SCORPION', 'PISTOL', 'SHIELD', '', '', '', '行動力のみ仮、ほかはwiki掲載値'],
+      ['SUWA', '諏訪', '諏', 'S7', 'GN', 15, 7, 8, 7, 6, 7, 7, 'SHOTGUN', '', 'SHOTGUN', 'SHIELD', '', 'W_SHOTGUN', K],
+      ['OKI', '隠岐', '隠', 'S7', 'SN', 15, 8, 6, 5, 7, 6, 8, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', 'GRASSHOPPER', 'MOBILE_SNIPE', '能力値はwiki掲載値、スキルは仮'],
+      ['MIKUMO', '三雲', '修', 'S7', 'SH', 13, 2, 3, 4, 4, 5, 6, 'ASTEROID', 'RAYGUST', 'RAYGUST_S', 'SHIELD', '', '', W],
+      ['KATORI', '香取', '香', 'S7', 'AR', 16, 6, 9, 6, 8, 6, 7, 'SCORPION', 'PISTOL', 'SHIELD', 'GRASSHOPPER', '', 'MELEE_LINK,ALLROUND_APT', W],
+      ['NINOMIYA', '二宮', '二', 'S8', 'SH', 15, 14, 10, 8, 6, 7, 10, 'ASTEROID', 'HOUND', 'SHIELD', 'ASTEROID', '', '', K],
+      ['AZUMA', '東', '東', 'S8', 'SN', 14, 7, 8, 8, 7, 10, 10, 'EGRET', 'IBIS', 'SHIELD', 'BAGWORM', '', 'PRECISE_SNIPE,CHECK_SNIPE', K],
+      ['AMATORI', '雨取', '千', 'S8', 'SN', 12, 25, 2, 4, 3, 5, 5, 'IBIS', 'LEAD', 'SHIELD', 'BAGWORM', 'LEAD_H', 'INEXPERIENCE,TRION_XL', '援護・技術は仮、ほかはwiki掲載値'],
+      ['EMA', '絵馬', '絵', 'S8', 'SN', 14, 8, 9, 6, 6, 6, 10, 'EGRET', 'IBIS', 'SHIELD', 'BAGWORM', '', 'PRECISE_SNIPE', K],
+      ['MIZUKAMI', '水上', '水', 'S9', 'SH', 14, 5, 6, 5, 6, 8, 7, 'ASTEROID', 'HOUND', 'SHIELD', 'METEORA', '', 'LIAR_SHOT', '回避・援護は仮、ほかはwiki掲載値'],
+      ['ARAFUNE', '荒船', '荒', 'S9', 'SN', 15, 6, 8, 6, 7, 8, 8, 'EGRET', 'KOGETSU', 'SHIELD', 'BAGWORM', '', '', 'トリオン・回避・技術は仮、ほかはwiki掲載値'],
+      ['KASHIO', '樫尾', '樫', 'S9', 'AT', 17, 5, 6, 7, 6, 7, 7, 'KOGETSU', 'HOUND', 'SHIELD', 'GRASSHOPPER', '', '', W],
+      ['TERUYA', '照屋', '照', 'S9', 'AR', 16, 7, 6, 6, 7, 7, 7, 'KOGETSU', 'RIFLE', 'SHIELD', '', '', 'SHOT_LINK', '回避・技術は仮、ほかはwiki掲載値'],
+      ['MURAKAMI', '村上', '村', 'S10', 'AT', 16, 7, 9, 10, 7, 8, 9, 'KOGETSU', 'SENKU', 'RAYGUST_S', 'SHIELD', '', 'PARRY', K],
+      ['TSUTSUMI', '堤', '堤', 'S10', 'GN', 15, 7, 7, 7, 6, 8, 7, 'SHOTGUN', '', 'SHOTGUN', 'SHIELD', '', 'W_SHOTGUN', K],
+      ['KUMAGAI', '熊谷', '熊', 'S10', 'AT', 15, 5, 7, 8, 6, 8, 7, 'KOGETSU', 'METEORA', 'SHIELD', '', '', 'PARRY', K],
+      ['KURAUCHI', '蔵内', '蔵', 'S10', 'SH', 14, 8, 7, 7, 5, 8, 8, 'ASTEROID', 'HOUND', 'SHIELD', 'METEORA', '', 'SHOT_LINK', K],
+      ['WAKAMURA', '若村', '若', 'S11', 'GN', 15, 6, 6, 6, 6, 7, 6, 'RIFLE', 'RIFLE_H', 'SHIELD', 'CHAMELEON', '', 'UNSTABLE_SHOT', K],
+      ['HANZAKI', '半崎', '半', 'S11', 'SN', 13, 6, 7, 5, 5, 6, 9, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', 'PRECISE_SNIPE', K],
+      ['SASAMORI', '笹森', '笹', 'S11', 'AT', 16, 5, 6, 6, 7, 7, 6, 'KOGETSU', 'SENKU', 'SHIELD', 'CHAMELEON', '', '', K],
+      ['HYUSE', 'ヒュース', 'ヒ', 'S11', 'AR', 17, 10, 9, 8, 8, 7, 9, 'KOGETSU', 'VIPER', 'ESCUDO', 'SHIELD', '', '', K],
+      ['TACHIKAWA', '太刀川', '太', '', 'AT', 17, 7, 11, 8, 8, 6, 10, 'KOGETSU', 'SENKU', 'KOGETSU', 'SHIELD', 'GRASSHOPPER', 'MELEE_LINK,KOGETSU_APT', K],
+      ['KAZAMA', '風間', '風', '', 'AT', 18, 6, 9, 7, 10, 9, 10, 'SCORPION', '', 'SCORPION', 'SHIELD', 'CHAMELEON', 'MELEE_LINK,CHAMELEON_APT', K],
+      ['TOMA', '当真', '当', '', 'SN', 14, 7, 10, 5, 7, 5, 11, 'EGRET', 'IBIS', 'SHIELD', 'BAGWORM', '', 'VITAL_SHOT', K],
+      ['IZUMI', '出水', '出', '', 'SH', 15, 12, 9, 8, 6, 9, 10, 'ASTEROID', 'VIPER', 'SHIELD', 'HOUND', 'METEORA', 'SHOT_LINK,TRION_L', K],
+      ['SAEKI', '佐伯', '佐', '', 'AR', 16, 7, 8, 7, 7, 8, 8, 'KOGETSU', 'RIFLE', 'SHIELD', '', '', '', K],
+      ['SATOMI', '里見', '里', '', 'GN', 16, 8, 10, 7, 8, 7, 10, 'PISTOL', 'RIFLE', 'PISTOL', 'SHIELD', '', 'TWIN_PISTOL', K],
+      ['MIDORIKAWA', '緑川', '緑', '', 'AT', 18, 6, 8, 5, 10, 6, 8, 'SCORPION', '', 'SCORPION', 'SHIELD', 'GRASSHOPPER', 'SCORPION_APT', K],
+      ['UNO', '宇野', '宇', '', 'AT', 16, 6, 8, 7, 7, 8, 8, 'KOGETSU', 'SENKU', 'SHIELD', '', '', '', K],
+      ['ARASHIYAMA', '嵐山', '嵐', '', 'AR', 17, 7, 8, 8, 8, 10, 9, 'RIFLE', 'SCORPION', 'SHIELD', 'RIFLE_H', '', '', K],
+      ['SATORI', '佐鳥', '鳥', '', 'SN', 14, 6, 8, 5, 7, 8, 10, 'EGRET', '', 'EGRET', 'BAGWORM', 'SHIELD', 'TWIN_SNIPE', K],
+      ['TOKIEDA', '時枝', '時', '', 'AR', 16, 6, 7, 8, 7, 10, 8, 'RIFLE', 'SCORPION', 'SHIELD', '', '', '', K],
+      ['KAKO', '加古', '加', '', 'SH', 15, 10, 9, 7, 7, 7, 9, 'HOUND', 'ASTEROID', 'SHIELD', 'SCORPION', '', '', K],
+      ['KUROE', '黒江', '黒', '', 'AT', 18, 6, 8, 6, 9, 7, 8, 'KOGETSU', 'SENKU', 'SHIELD', '', '', 'MELEE_LINK', K],
+      ['MIWA', '三輪', '輪', '', 'AR', 16, 7, 9, 7, 7, 7, 9, 'KOGETSU', 'PISTOL', 'SHIELD', 'LEAD_H', '', '', K],
+      ['YONEYA', '米屋', '米', '', 'AT', 17, 4, 9, 7, 8, 7, 9, 'KOGETSU', '', 'SHIELD', '', '', 'SPEAR', K],
+      ['NARASAKA', '奈良坂', '奈', '', 'SN', 14, 7, 9, 6, 6, 7, 11, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', 'PRECISE_SNIPE', K],
+      ['KATAGIRI', '片桐', '片', '', 'AR', 16, 7, 8, 7, 7, 8, 8, 'KOGETSU', 'RIFLE', 'SHIELD', '', '', '', K],
+      ['ICHIJO', '一条', '一', '', 'AT', 17, 6, 8, 6, 8, 7, 8, 'SCORPION', '', 'SHIELD', 'SCORPION', '', '', K],
+      ['MOMOZONO', '桃園', '桃', '', 'SN', 14, 6, 8, 5, 6, 7, 9, 'EGRET', 'LIGHTNING', 'SHIELD', 'BAGWORM', '', '', K],
+      ['NASU', '那須', '那', '', 'SH', 16, 7, 8, 6, 9, 7, 9, 'VIPER', 'METEORA', 'SHIELD', 'VIPER', '', '', K],
+    ]),
+    'トリガー': rows(['ID', '名称', '分類', '威力', '最小射程', '射程', '角度', '基礎命中', '行動力', '待ち時間', '参照', '爆発範囲', '効果', '効果値', '説明'], [
+      ['KOGETSU', '弧月', '近接', 30, 0, 1, 135, 95, 4, 1, '攻撃', 0, '', 0, '攻守のバランスが良いブレード'],
+      ['SENKU', '旋空弧月', '近接', 30, 0, 3, 90, 85, 6, 2, '攻撃', 0, '', 0, '刃を伸ばして離れた相手を斬る'],
+      ['SCORPION', 'スコーピオン', '近接', 23, 0, 1, 180, 100, 3, 1, '攻撃', 0, '', 0, '軽くて振りが速いブレード'],
+      ['RAYGUST', 'レイガスト', '近接', 26, 0, 1, 120, 90, 4, 1, '攻撃', 0, '', 0, '重いブレード'],
+      ['ASTEROID', 'アステロイド', '射撃', 24, 0, 7, 70, 85, 4, 1, 'トリオン', 0, '', 0, '射手の通常弾'],
+      ['HOUND', 'ハウンド', '射撃', 16, 0, 6, 120, 95, 4, 1, 'トリオン', 0, '', 0, '追尾弾。扇が広く当てやすい'],
+      ['VIPER', 'バイパー', '射撃', 16, 0, 6, 120, 85, 5, 1, 'トリオン', 0, '射線無視', 0, '変化弾。建物の向こうを撃てる'],
+      ['METEORA', 'メテオラ', '射撃', 18, 2, 6, 70, 80, 5, 2, 'トリオン', 1, '', 0, '炸裂弾。周囲の敵も巻き込む'],
+      ['RIFLE', '突撃銃(アステロイド)', '射撃', 15, 0, 7, 50, 90, 3, 1, 'トリオン', 0, '', 0, '銃手の通常弾。射程が長く軽い'],
+      ['RIFLE_H', '突撃銃(ハウンド)', '射撃', 12, 0, 7, 90, 98, 3, 1, 'トリオン', 0, '', 0, '銃手の追尾弾'],
+      ['PISTOL', '拳銃(アステロイド)', '射撃', 24, 0, 4, 70, 90, 4, 1, 'トリオン', 0, '', 0, '近距離の拳銃'],
+      ['SHOTGUN', '散弾銃', '射撃', 24, 0, 3, 100, 95, 4, 1, 'トリオン', 0, '', 0, '至近距離で強い'],
+      ['GRENADE', '榴弾銃(メテオラ)', '射撃', 20, 3, 8, 50, 75, 6, 2, 'トリオン', 1, '', 0, '遠くへ撃ち込む炸裂弾'],
+      ['EGRET', 'イーグレット', '狙撃', 38, 4, 14, 30, 80, 7, 2, '技術', 0, '', 0, '射程重視の狙撃銃'],
+      ['LIGHTNING', 'ライトニング', '狙撃', 22, 3, 11, 30, 95, 5, 1, '技術', 0, '', 0, '弾速重視。当てやすく軽い'],
+      ['IBIS', 'アイビス', '狙撃', 34, 4, 12, 24, 65, 9, 3, 'トリオン', 0, '', 0, '威力重視。トリオンが多いほど強い'],
+      ['LEAD', '鉛弾狙撃', '狙撃', 0, 3, 10, 30, 70, 6, 2, '技術', 0, '鈍足', 6, 'ダメージはないが相手の行動力を削る。射程10・基礎命中70はwiki掲載値'],
+      ['LEAD_H', '鉛弾追尾弾', '射撃', 0, 0, 4, 120, 80, 5, 1, 'トリオン', 0, '鈍足', 6, '近距離の鉛弾。射程4・基礎命中80はwiki掲載値'],
+      ['SHIELD', 'シールド', '防御', 35, 0, 99, 120, 0, 2, 1, 'トリオン', 0, '', 0, '扇の範囲内から来た攻撃だけ防ぐ'],
+      ['RAYGUST_S', 'レイガスト(盾)', '防御', 45, 0, 99, 100, 0, 2, 1, '防御', 0, '', 0, '硬いが扇が狭い。トリオンの影響を受けにくい'],
+      ['ESCUDO', 'エスクード', '防御', 60, 0, 99, 70, 0, 3, 1, 'トリオン', 0, '', 0, '壁を出して防ぐ。扇が狭く消費が重い'],
+      ['BAGWORM', 'バッグワーム', '回避', 10, 0, 99, 140, 0, 1, 0, '', 0, 'レーダー非表示', 0, 'レーダーに映らない。扇の範囲内から来た攻撃を回避できる'],
+      ['CHAMELEON', 'カメレオン', '回避', 25, 0, 99, 360, 0, 2, 0, '', 0, '透明', 2, '効果値のマス数まで近づかれないと見えない。使用中は攻撃も防御もできない'],
+      ['GRASSHOPPER', 'グラスホッパー', '移動', 0, 0, 0, 0, 0, 0, 0, '', 0, '登り強化', 4, '装備していれば常に有効。一度に4段まで、少ない行動力で上れる'],
+    ]),
+    'スキル': rows(['ID', '名称', '効果', '対象', '値', '値2', '説明'], [
+      ['MELEE_LINK', '近接連携', '連携', '近接', 0, 0, '味方が攻撃した敵が自分のブレードの射程内にいれば、行動力消費なしで追撃する'],
+      ['SHOT_LINK', '射撃連携', '連携', '射撃', 1, 0, '近接連携の射撃版。追撃に行動力を1使う'],
+      ['W_SHOTGUN', 'Wショットガン', '威力', 'SHOTGUN', 15, 0, '散弾銃の威力が上がる(原作は両攻撃時)'],
+      ['TWIN_PISTOL', '二丁拳銃', '威力', 'PISTOL', 15, 0, '拳銃の威力が上がる(原作は両攻撃時)'],
+      ['PISTOL_APT', '拳銃適正', '行動力', 'PISTOL', 1, 0, '拳銃を装備していると行動力+1'],
+      ['PISTOL_APT', '拳銃適正', '威力', 'PISTOL', 10, 0, '拳銃の威力が上がる'],
+      ['KOGETSU_APT', '弧月適正', '行動力', 'KOGETSU', 2, 0, '弧月を装備していると行動力+2'],
+      ['SCORPION_APT', 'スコーピオン適正', '行動力', 'SCORPION', 2, 0, 'スコーピオンを装備していると行動力+2'],
+      ['ALLROUND_APT', '万能適正', '行動力', '', 2, 0, '原作は試合ごとに適正スキルを2つ選ぶ。ここでは行動力+2に簡略化'],
+      ['CHAMELEON_APT', 'カメレオン適正', '起動消費', 'CHAMELEON', -1, 0, 'カメレオン起動の行動力-1'],
+      ['CHAMELEON_APT', 'カメレオン適正', '回避', '', 10, 0, '回避率が上がる(原作はカメレオン使用中のみ)'],
+      ['GRENADE_APT', '榴弾銃適正', '攻撃消費', 'GRENADE', -1, 0, '榴弾銃の行動力-1'],
+      ['MOBILE_SNIPE', '機動狙撃', '攻撃消費', '狙撃', -1, 0, '狙撃の行動力-1'],
+      ['TWIN_SNIPE', 'ツインスナイプ', '攻撃消費', 'EGRET', -1, 0, 'イーグレットの行動力-1(原作は2本の両攻撃で合計-3)'],
+      ['PRECISE_SNIPE', '精密狙撃', '命中', '狙撃', 10, 0, '狙撃の基礎命中率が上がる'],
+      ['PRECISE_SNIPE', '精密狙撃', '射程', '狙撃', 2, 0, '狙撃の射程が伸びる'],
+      ['CHECK_SNIPE', '牽制狙撃', '足止め', '狙撃', 1, 1, '狙撃を防御または回避させた相手の行動力を1余分に減らす'],
+      ['VITAL_SHOT', '急所狙い', '即離脱', '', 30, 0, 'ダメージを与えたとき30%で相手がベイルアウト'],
+      ['INTUITION', '直感回避', '全方位回避', '', 0, 0, '警戒範囲の外から来た攻撃にも回避判定を行う'],
+      ['INTUITION', '直感回避', '回避', '狙撃', 30, 0, '狙撃に対する回避率が大きく上がる'],
+      ['HEARING', '強化聴覚', '索敵', '', 10, 0, '周囲10マスの敵を、視界やレーダーなしで捉える'],
+      ['SWIFT', '健脚', '行動力', '', 1, 0, '行動力+1'],
+      ['INEXPERIENCE', '戦闘経験不足', '攻撃消費', '', 1, 0, '攻撃時に行動力を余分に1消費する'],
+      ['TRION_L', 'トリオン・大', '射程', '射撃', 1, 0, '射手・銃手トリガーの射程+1'],
+      ['TRION_L', 'トリオン・大', '爆発範囲', '射撃', 1, 0, '炸裂弾の範囲+1'],
+      ['TRION_XL', 'トリオン・極大', '射程', '射撃', 2, 0, '射手・銃手トリガーの射程+2'],
+      ['TRION_XL', 'トリオン・極大', '爆発範囲', '射撃', 2, 0, '炸裂弾の範囲+2'],
+      ['SPEAR', '槍術', '射程', 'KOGETSU', 2, 0, '弧月の射程が3になる'],
+      ['PARRY', '受け太刀', '防御', '近接', 10, 0, 'ブレード攻撃に対する軽減率が上がる(原作は弧月装備時)'],
+      ['PARRY', '受け太刀', '防御待ち無効', '近接', 0, 0, 'ブレード攻撃を防いでも待ち時間が増えない'],
+      ['LIAR_SHOT', '嘘つき射撃', '近距離強化', '射撃', 6, 20, '相手が6マス以内のとき射撃の威力が上がる(値=距離、値2=威力%)'],
+      ['QUICKDRAW', '早撃ち', '先制', '', 0, 0, '同時に攻撃が起きたとき、自分の攻撃が先に判定される'],
+      ['UNSTABLE_SHOT', '不安定な射撃', '威力ぶれ', '射撃', 70, 110, '射撃の威力が毎回70%〜110%でぶれる'],
+      ['UNSTABLE_SNIPE', '不安定な狙撃', '威力ぶれ', '狙撃', 80, 115, '狙撃の威力が毎回80%〜115%でぶれる'],
+    ]),
+    '地形': rows(['記号', '名称', '高さ', '進入可', '色'], [
+      ['.', '道路', 0, 1, '#22313b'],
+      ['1', '塀・物置', 1, 1, '#3d4f63'],
+      ['2', '民家', 2, 1, '#55617f'],
+      ['3', '工場', 3, 1, '#5f7a8c'],
+      ['4', 'ビル', 4, 1, '#7b93a6'],
+      ['6', '高層ビル', 6, 1, '#a9bccb'],
+      ['#', '進入不可', 9, 0, '#0b1318'],
+    ]),
+    'マップ': rows(['マップ', '行', '地形データ'], [].concat(
+      mapRows('演習場①', MAP1),
+      mapRows('演習場②', pad(MAP1, 2, 1)),
+      mapRows('演習場③', pad(MAP1, 4, 2)),
+    )),
+  };
+
+  return { SCHEMA, TABLES };
+});
+
+</script>
+<script>
+/* 戦闘シミュレーション演習のエンジン。画面を持たず、表から読んだ数値だけで試合を進める。ブラウザとNodeの両方で動く。 */
+(function (root, factory) {
+  const E = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = E;
+  else root.SIM_ENGINE = E;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const ATTACK = ['近接', '射撃', '狙撃'];
+  const CLASSES = ['近接', '射撃', '狙撃', '防御', '回避', '移動'];
+  const TRIG_FX = ['', '射線無視', '鈍足', 'レーダー非表示', '透明', '登り強化'];
+  const SKILL_FX = ['行動力', '攻撃消費', '起動消費', '威力', '命中', '射程', '爆発範囲', '威力ぶれ', '近距離強化', '必中', '即離脱', '回避', '全方位回避', '防御', '防御待ち無効', '足止め', '連携', '先制', '索敵'];
+  const REFS = { '攻撃': 'atk', 'トリオン': 'tri', '技術': 'tec', '防御': 'def', '回避': 'eva', '援護': 'sup' };
+  // 向き: 北から時計回りに8方向
+  const DIRS8 = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+  const DIR_NAMES = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+  const STEP4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+  const str = v => (v === null || v === undefined) ? '' : String(v).trim();
+  const num = (v, d) => { const n = typeof v === 'number' ? v : parseFloat(str(v).replace(/,/g, '')); return isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const isNum = v => typeof v === 'number' ? isFinite(v) : (str(v) !== '' && isFinite(Number(str(v).replace(/,/g, ''))));
+  const list = v => str(v).split(/[,、\s]+/).map(s => s.trim()).filter(Boolean);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  function rng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ---------- 表 → 参照しやすい形 ---------- */
+  function buildDB(tables, fallbackRules) {
+    const errors = [];
+    const T = n => Array.isArray(tables[n]) ? tables[n] : (errors.push(`表「${n}」がありません`), []);
+    const needNum = (table, i, row, col) => {
+      if (!isNum(row[col])) { errors.push(`${table} ${i + 1}行目「${col}」が数値ではありません(${str(row[col]) || '空欄'})`); return 0; }
+      return num(row[col]);
+    };
+    const color = (v, d) => /^#[0-9a-fA-F]{6}$/.test(str(v)) ? str(v) : d;
+
+    const rules = Object.assign({}, fallbackRules || {});
+    T('ルール').forEach((r, i) => { const k = str(r['項目']); if (k) rules[k] = needNum('ルール', i, r, '値'); });
+
+    const terms = {};
+    T('用語').forEach(r => { const k = str(r['キー']); if (k) terms[k] = str(r['表示名']) || k; });
+
+    const triggers = {};
+    T('トリガー').forEach((r, i) => {
+      const id = str(r['ID']); if (!id) return;
+      if (triggers[id]) errors.push(`トリガー ${i + 1}行目 ID「${id}」が重複しています`);
+      const cls = str(r['分類']), fx = str(r['効果']), ref = str(r['参照']);
+      if (!CLASSES.includes(cls)) errors.push(`トリガー「${id}」の分類は ${CLASSES.join('/')} のどれかにしてください`);
+      if (!TRIG_FX.includes(fx)) errors.push(`トリガー「${id}」の効果は 空欄/${TRIG_FX.slice(1).join('/')} のどれかにしてください`);
+      if (ref && !REFS[ref]) errors.push(`トリガー「${id}」の参照は ${Object.keys(REFS).join('/')} のどれか、または空欄にしてください`);
+      const n = c => needNum('トリガー', i, r, c);
+      triggers[id] = { id, name: str(r['名称']) || id, cls, pow: n('威力'), rmin: n('最小射程'), rmax: n('射程'), angle: n('角度'), hit: n('基礎命中'), cost: n('行動力'), wait: n('待ち時間'), ref: REFS[ref] || '', refName: ref, blast: n('爆発範囲'), fx, fxv: n('効果値'), desc: str(r['説明']) };
+    });
+
+    const skills = {};
+    T('スキル').forEach((r, i) => {
+      const id = str(r['ID']); if (!id) return;
+      const type = str(r['効果']), target = str(r['対象']);
+      if (!SKILL_FX.includes(type)) errors.push(`スキル ${i + 1}行目「${id}」の効果「${type || '空欄'}」は使えません(${SKILL_FX.join('/')})`);
+      if (target && !CLASSES.includes(target) && !triggers[target]) errors.push(`スキル ${i + 1}行目「${id}」の対象「${target}」が分類名でもトリガーIDでもありません`);
+      const s = skills[id] || (skills[id] = { id, name: str(r['名称']) || id, fx: [], desc: [] });
+      s.fx.push({ type, target, v: needNum('スキル', i, r, '値'), v2: num(r['値2'], 0) });
+      if (str(r['説明'])) s.desc.push(str(r['説明']));
+    });
+
+    const squads = {}; const squadAll = [];
+    T('部隊').forEach((r, i) => {
+      const id = str(r['ID']); if (!id) return;
+      if (squads[id]) errors.push(`部隊 ${i + 1}行目 ID「${id}」が重複しています`); else squadAll.push(id);
+      squads[id] = { id, name: str(r['名称']) || id, abbr: str(r['略称']) || str(r['名称']) || id, color: color(r['色'], '#9fb3c8'), members: [] };
+    });
+
+    const terrain = {};
+    T('地形').forEach((r, i) => {
+      const sym = str(r['記号']); if (!sym) return;
+      if (Array.from(sym).length !== 1) errors.push(`地形 ${i + 1}行目 記号「${sym}」は1文字にしてください`);
+      terrain[sym] = { sym, name: str(r['名称']) || sym, h: needNum('地形', i, r, '高さ'), pass: needNum('地形', i, r, '進入可') > 0, color: color(r['色'], '#33424d') };
+    });
+
+    const maps = {}; const mapOrder = [];
+    T('マップ').forEach(r => {
+      const name = str(r['マップ']); if (!name) return;
+      if (!maps[name]) { maps[name] = { name, lines: [] }; mapOrder.push(name); }
+      maps[name].lines.push({ n: num(r['行'], maps[name].lines.length + 1), s: (r['地形データ'] === null || r['地形データ'] === undefined) ? '' : String(r['地形データ']).replace(/\s+$/, '') });
+    });
+    mapOrder.forEach(name => {
+      const m = maps[name]; m.lines.sort((a, b) => a.n - b.n);
+      m.rows = m.lines.map(l => Array.from(l.s)); m.h = m.rows.length; m.w = m.rows[0].length;
+      let bad = false;
+      m.rows.forEach((row, y) => {
+        if (row.length !== m.w) errors.push(`マップ「${name}」${y + 1}段目の文字数(${row.length})が1段目(${m.w})と違います`);
+        row.forEach(ch => { if (!terrain[ch] && !bad) { errors.push(`マップ「${name}」${y + 1}段目に地形表にない記号「${ch}」があります`); bad = true; } });
+      });
+    });
+    if (!mapOrder.length) errors.push('マップが1つもありません');
+
+    const members = {}; const memberOrder = [];
+    T('ユニット').forEach((r, i) => {
+      const id = str(r['ID']); if (!id) return;
+      const name = str(r['名前']) || id;
+      if (members[id]) { errors.push(`ユニット ${i + 1}行目 ID「${id}」が重複しています`); return; }
+      const sq = str(r['部隊']);
+      if (sq && !squads[sq]) { errors.push(`ユニット「${name}」の部隊「${sq}」が部隊表にありません`); return; }
+      const trig = col => { const t = str(r[col]); if (!t) return null; if (!triggers[t]) { errors.push(`ユニット「${name}」の${col}「${t}」がトリガー表にありません`); return null; } return triggers[t]; };
+      const mains = ['メイン1', 'メイン2'].map(trig).filter(Boolean), subs = ['サブ1', 'サブ2', 'サブ3'].map(trig).filter(Boolean);
+      const sk = list(r['スキル']).map(s => { if (!skills[s]) { errors.push(`ユニット「${name}」のスキル「${s}」がスキル表にありません`); return null; } return skills[s]; }).filter(Boolean);
+      const n = c => needNum('ユニット', i, r, c);
+      const m = {
+        id, name, label: str(r['表示']) || Array.from(name)[0], squad: sq, pos: str(r['ポジション']),
+        st: { ap: n('行動力'), tri: n('トリオン'), atk: n('攻撃'), def: n('防御'), eva: n('回避'), sup: n('援護'), tec: n('技術') },
+        mainOpts: mains.filter(t => t.cls !== '移動'), subOpts: subs.filter(t => t.cls !== '移動'),
+        passive: mains.concat(subs).filter(t => t.cls === '移動'), all: mains.concat(subs), skills: sk, fx: {}, note: str(r['備考']),
+      };
+      for (const s of sk) for (const f of s.fx) (m.fx[f.type] || (m.fx[f.type] = [])).push(f);
+      members[id] = m; memberOrder.push(id);
+      if (sq) squads[sq].members.push(m);
+    });
+    const squadOrder = squadAll.filter(id => squads[id].members.length > 0);
+    if (squadOrder.length < 2) errors.push('ユニットのいる部隊が2つ以上必要です');
+
+    const exercises = {}; const exOrder = [];
+    T('演習').forEach((r, i) => {
+      const id = str(r['ID']); if (!id) return;
+      const n = c => needNum('演習', i, r, c);
+      const help = list(r['ヘルプ候補']);
+      help.forEach(h => { if (!members[h]) errors.push(`演習「${id}」のヘルプ候補「${h}」がユニット表にありません`); });
+      const map = str(r['マップ']);
+      if (!maps[map]) errors.push(`演習「${id}」のマップ「${map || '空欄'}」がマップ表にありません`);
+      exercises[id] = { id, name: str(r['名称']) || id, win: n('勝ち'), draw: n('引き分け'), lose: n('負け'), per: Math.max(1, Math.round(n('基本ユニット'))), helpN: Math.max(0, Math.round(n('ヘルプ数'))), help: help.filter(h => members[h]), need: n('勝利条件'), turns: Math.max(1, Math.round(n('ターン数'))), map };
+      exOrder.push(id);
+    });
+    if (!exOrder.length) errors.push('演習が1つもありません');
+
+    return { db: { rules, terms, triggers, skills, squads, squadOrder, terrain, maps, mapOrder, members, memberOrder, exercises, exOrder }, errors };
+  }
+
+  /* ---------- 盤面の基本 ---------- */
+  const terrAt = (st, x, y) => st.db.terrain[st.cells[y][x]];
+  const H = (st, x, y) => st.db.terrain[st.cells[y][x]].h;
+  const dist = (x0, y0, x1, y1) => Math.hypot(x1 - x0, y1 - y0);
+  function dirOf(dx, dy) { return ((Math.round((Math.atan2(dy, dx) + Math.PI / 2) / (Math.PI / 4)) % 8) + 8) % 8; }
+
+  /* 扇形の範囲に入っているか */
+  function inFan(ux, uy, face, rmin, rmax, angle, tx, ty) {
+    const dx = tx - ux, dy = ty - uy, d = Math.hypot(dx, dy);
+    if (d === 0 || d > rmax + 0.5 || d < rmin - 0.01) return false;
+    if (angle >= 360) return true;
+    let diff = Math.abs(Math.atan2(dy, dx) - Math.atan2(DIRS8[face][1], DIRS8[face][0]));
+    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    return diff <= angle / 2 * Math.PI / 180 + 1e-6;
+  }
+
+  /* 射線。目の高さどうしを結んだ線より高い建物が間にあると遮られる。 */
+  function los(st, x0, y0, x1, y1) {
+    if (y0 > y1 || (y0 === y1 && x0 > x1)) { let t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
+    const dx = x1 - x0, dy = y1 - y0, n = Math.max(Math.abs(dx), Math.abs(dy));
+    if (n <= 1) return true;
+    const h0 = H(st, x0, y0) + 0.6, h1 = H(st, x1, y1) + 0.6;
+    for (let i = 1; i < n; i++) {
+      const t = i / n, x = Math.round(x0 + dx * t), y = Math.round(y0 + dy * t);
+      if (H(st, x, y) > h0 + (h1 - h0) * t) return false;
+    }
+    return true;
+  }
+
+  /* ---------- スキルと能力 ---------- */
+  const fxOf = (u, type) => u.m.fx[type] || [];
+  const match = (f, w) => !f.target || (!!w && (f.target === w.cls || f.target === w.id));
+  function sum(u, type, w) { let s = 0; for (const f of fxOf(u, type)) if (match(f, w)) s += f.v; return s; }
+  function has(u, type, w) { for (const f of fxOf(u, type)) if (match(f, w)) return true; return false; }
+  const equipped = (u, id) => u.m.all.some(t => t.id === id);
+
+  function apMax(st, u) {
+    let ap = u.m.st.ap;
+    for (const f of fxOf(u, '行動力')) if (!f.target || equipped(u, f.target)) ap += f.v;
+    return Math.max(1, ap);
+  }
+  const maxHp = (st, m) => Math.max(1, Math.round(st.db.rules['基礎耐久'] + m.st.def * st.db.rules['耐久防御係数']));
+  const isAttack = w => !!w && ATTACK.includes(w.cls);
+  const mainOf = u => u.mi >= 0 ? u.m.mainOpts[u.mi] : null;
+  const subOf = u => u.si >= 0 ? u.m.subOpts[u.si] : null;
+  function active(u) { const a = []; const m = mainOf(u), s = subOf(u); if (m) a.push(m); if (s) a.push(s); return a; }
+  const cloaked = u => active(u).some(t => t.fx === '透明');
+  const offRadar = u => active(u).some(t => t.fx === 'レーダー非表示');
+  const rangeOf = (u, w) => isAttack(w) ? w.rmax + sum(u, '射程', w) : w.rmax;
+  const blastOf = (u, w) => w.blast > 0 ? w.blast + sum(u, '爆発範囲', w) : 0;
+  const attackCost = (u, w) => Math.max(1, w.cost + sum(u, '攻撃消費', w));
+  const startCost = (u, w) => Math.max(0, w.cost + sum(u, '起動消費', w));
+  const climbOf = (st, u) => { let c = st.db.rules['最大段差']; for (const t of u.m.passive) if (t.fx === '登り強化') c = Math.max(c, t.fxv); return c; };
+  const boosted = u => u.m.passive.some(t => t.fx === '登り強化');
+  const visionOf = (st, u) => st.db.rules['基礎視界'] + H(st, u.x, u.y) * st.db.rules['高所視界'];
+  const primary = u => u.m.mainOpts.find(isAttack) || u.m.subOpts.find(isAttack) || null;
+
+  /* 1歩の行動力。進めないときは -1 */
+  function stepCost(st, u, fx, fy, tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= st.w || ty >= st.h) return -1;
+    const t = terrAt(st, tx, ty); if (!t.pass) return -1;
+    const up = t.h - H(st, fx, fy);
+    if (up > climbOf(st, u)) return -1;
+    return 1 + (up > 0 ? Math.max(0, Math.ceil(boosted(u) ? up * st.db.rules['登り強化係数'] : up)) : 0);
+  }
+
+  /* (fx,fy) からの移動コスト。blocked にあるマスは通れない。 */
+  function costField(st, u, fx, fy, budget, blocked) {
+    const W = st.w, N = W * st.h, best = new Array(N).fill(Infinity), prev = new Array(N).fill(-1);
+    const s = fy * W + fx; best[s] = 0;
+    const buckets = [[s]]; // コストは整数なので、コストごとの箱で近い順に広げる
+    for (let c = 0; c < buckets.length; c++) {
+      const b = buckets[c]; if (!b) continue;
+      for (let k = 0; k < b.length; k++) {
+        const cur = b[k]; if (best[cur] !== c) continue;
+        const cx = cur % W, cy = (cur / W) | 0;
+        for (const [dx, dy] of STEP4) {
+          const nx = cx + dx, ny = cy + dy, sc = stepCost(st, u, cx, cy, nx, ny); if (sc < 0) continue;
+          const ni = ny * W + nx; if (blocked && blocked[ni]) continue;
+          const nc = c + sc;
+          if (nc <= budget && nc < best[ni]) { best[ni] = nc; prev[ni] = cur; (buckets[nc] || (buckets[nc] = [])).push(ni); }
+        }
+      }
+    }
+    return { best, prev };
+  }
+  function pathFrom(st, field, tx, ty) {
+    const W = st.w; let i = ty * W + tx; if (field.best[i] === Infinity) return null;
+    const steps = []; while (field.prev[i] >= 0) { steps.unshift({ x: i % W, y: (i / W) | 0 }); i = field.prev[i]; }
+    return steps;
+  }
+  function pathTo(st, u, fx, fy, tx, ty, budget, blocked) {
+    const f = costField(st, u, fx, fy, budget, blocked); const steps = pathFrom(st, f, tx, ty);
+    return steps ? { steps, cost: f.best[ty * st.w + tx] } : null;
+  }
+
+  /* ---------- 試合の準備 ---------- */
+  function newMatch(db, opts) {
+    const seed = (opts.seed === undefined || opts.seed === null) ? (Math.random() * 4294967296) >>> 0 : opts.seed >>> 0;
+    const ex = db.exercises[opts.exercise] || db.exercises[db.exOrder[0]];
+    const mp = db.maps[ex.map] || db.maps[db.mapOrder[0]];
+    const st = { db, seed, rand: rng(seed), ex, mapName: mp.name, w: mp.w, h: mp.h, cells: mp.rows.map(r => r.slice()), units: [], teams: { A: opts.teamA, B: opts.teamB }, help: { A: [], B: [] }, turn: 1, over: false, result: null, det: null };
+    for (const team of ['A', 'B']) {
+      const sq = db.squads[st.teams[team]]; const defs = [];
+      for (const m of sq.members) for (let n = 1; n <= ex.per; n++) defs.push({ m, n: ex.per > 1 ? n : 0, help: false });
+      let hs = (opts['help' + team] || []).filter(id => ex.help.includes(id)).slice(0, ex.helpN);
+      const pool = ex.help.filter(id => !hs.includes(id));
+      while (hs.length < ex.helpN && pool.length) hs.push(pool.splice(Math.floor(st.rand() * pool.length), 1)[0]);
+      st.help[team] = hs;
+      for (const id of hs) defs.push({ m: db.members[id], n: 0, help: true });
+      for (const d of defs) {
+        const m = d.m, shield = m.subOpts.findIndex(t => t.cls === '防御');
+        const u = { id: `${team}:${m.id}${d.n ? ':' + d.n : ''}`, name: m.name + (d.n ? d.n : ''), label: m.label, n: d.n, team, squad: st.teams[team], help: d.help, m, x: 0, y: 0, face: team === 'A' ? 2 : 6, mi: m.mainOpts.length ? 0 : -1, si: shield >= 0 ? shield : (m.subOpts.length ? 0 : -1), max: maxHp(st, m), hp: 0, ap: 0, wait: 0, slowNext: 0, links: 0, alive: true, plan: [], q: [], chase: null, stall: 0, waited: false, kills: 0, dealt: 0, outTurn: 0 };
+        u.hp = u.max; u.ap = apMax(st, u);
+        st.units.push(u);
+      }
+    }
+    place(st);
+    st.det = { A: detect(st, 'A'), B: detect(st, 'B') };
+    return st;
+  }
+
+  function place(st) {
+    const cols = Math.max(1, Math.round(st.db.rules['初期配置列数']));
+    for (const team of ['A', 'B']) {
+      const open = [];
+      for (let y = 0; y < st.h; y++) for (let i = 0; i < Math.min(cols, st.w); i++) { const x = team === 'A' ? i : st.w - 1 - i; const t = terrAt(st, x, y); if (t.pass && t.h <= st.db.rules['最大段差']) open.push({ x, y }); }
+      const us = st.units.filter(u => u.team === team);
+      for (const u of us) {
+        if (!open.length) { u.alive = false; u.hp = 0; continue; }
+        const p = open.splice(Math.floor(st.rand() * open.length), 1)[0]; u.x = p.x; u.y = p.y;
+      }
+    }
+    st.units = st.units.filter(u => u.alive);
+  }
+
+  /* ---------- 視界とレーダー ---------- */
+  function detect(st, team) {
+    const seen = new Set(), radar = new Set();
+    const mine = st.units.filter(u => u.alive && u.team === team);
+    for (const e of st.units) {
+      if (!e.alive || e.team === team) continue;
+      if (!offRadar(e)) radar.add(e.id);
+      const cl = active(e).find(t => t.fx === '透明');
+      for (const a of mine) {
+        const d = dist(a.x, a.y, e.x, e.y);
+        const ear = sum(a, '索敵');
+        if (ear > 0 && d <= ear + 0.5) { seen.add(e.id); break; }
+        if (d > visionOf(st, a) + 0.5) continue;
+        if (cl && d > cl.fxv + 0.5) continue;
+        if (los(st, a.x, a.y, e.x, e.y)) { seen.add(e.id); break; }
+      }
+    }
+    return { seen, radar };
+  }
+  /* 狙える相手か: 視界に入っているか、レーダーに映っていて透明でない */
+  const known = (det, e) => det.seen.has(e.id) || (det.radar.has(e.id) && !cloaked(e));
+
+  /* ---------- 設定(計画)の補助 ---------- */
+  /* 戦闘が起きなかった場合に、計画の終わりでどこにいてどんな構えかを求める */
+  function planEnd(st, u, plan) {
+    const s = { x: u.x, y: u.y, face: u.face, mi: u.mi, si: u.si, ap: apMax(st, u) - u.slowNext, chase: null, path: [{ x: u.x, y: u.y }] };
+    s.ap = Math.max(0, s.ap);
+    for (const c of plan || []) {
+      if (c.type === 'face') s.face = c.dir;
+      else if (c.type === 'set') {
+        const opts = c.slot === 'main' ? u.m.mainOpts : u.m.subOpts, cur = c.slot === 'main' ? s.mi : s.si, w = opts[c.idx];
+        if (c.idx === cur) continue;
+        if (w && w.cls === '回避') { const cost = startCost(u, w); if (s.ap < cost) continue; s.ap -= cost; }
+        if (c.slot === 'main') s.mi = c.idx; else s.si = c.idx;
+      }
+      else if (c.type === 'move') {
+        const cost = stepCost(st, u, s.x, s.y, c.x, c.y);
+        if (cost < 0 || cost > s.ap || Math.abs(c.x - s.x) + Math.abs(c.y - s.y) !== 1) break;
+        if (!c.keep) s.face = dirOf(c.x - s.x, c.y - s.y);
+        s.ap -= cost; s.x = c.x; s.y = c.y; s.path.push({ x: c.x, y: c.y });
+      }
+      else if (c.type === 'chase') { s.chase = c.target; break; }
+    }
+    return s;
+  }
+
+  /* 扇の中のマス。see=false は建物で射線が切れているマス */
+  function fanTiles(st, u, x, y, face, w) {
+    const out = [], r = Math.min(rangeOf(u, w), st.w + st.h);
+    for (let ty = Math.max(0, Math.floor(y - r - 1)); ty <= Math.min(st.h - 1, Math.ceil(y + r + 1)); ty++)
+      for (let tx = Math.max(0, Math.floor(x - r - 1)); tx <= Math.min(st.w - 1, Math.ceil(x + r + 1)); tx++)
+        if (inFan(x, y, face, isAttack(w) ? w.rmin : 0, r, w.angle, tx, ty)) out.push({ x: tx, y: ty, see: w.fx === '射線無視' || los(st, x, y, tx, ty) });
+    return out;
+  }
+
+  /* ---------- 1ターンの行動 ---------- */
+  function bail(st, u, by, ev) {
+    u.alive = false; u.hp = 0; u.outTurn = st.turn; u.q = []; u.chase = null;
+    if (by) by.kills++;
+    ev.push({ t: 'bail', u: u.id, by: by ? by.id : null });
+  }
+
+  function applySet(st, u, c) {
+    const opts = c.slot === 'main' ? u.m.mainOpts : u.m.subOpts, cur = c.slot === 'main' ? u.mi : u.si, w = opts[c.idx];
+    if (c.idx === cur || c.idx >= opts.length) return false;
+    if (w && w.cls === '回避') { const cost = startCost(u, w); if (u.ap < cost) return false; u.ap -= cost; }
+    if (c.slot === 'main') u.mi = c.idx; else u.si = c.idx;
+    return true;
+  }
+
+  function occupancy(st) { const occ = new Array(st.w * st.h).fill(null); for (const u of st.units) if (u.alive) occ[u.y * st.w + u.x] = u; return occ; }
+
+  function tryMove(st, u, x, y, keep, occ, ev) {
+    if (Math.abs(x - u.x) + Math.abs(y - u.y) !== 1) return 'cant';
+    const cost = stepCost(st, u, u.x, u.y, x, y);
+    if (cost < 0 || cost > u.ap) return 'cant';
+    if (occ[y * st.w + x]) return 'blocked';
+    occ[u.y * st.w + u.x] = null; occ[y * st.w + x] = u;
+    if (!keep) u.face = dirOf(x - u.x, y - u.y);
+    u.ap -= cost; u.x = x; u.y = y;
+    ev.push({ t: 'move', u: u.id, x, y, face: u.face });
+    return 'moved';
+  }
+
+  function chaseStep(st, u, occ, ev) {
+    const c = u.chase, t = st.units.find(v => v.id === c.target);
+    if (!t || !t.alive) { u.chase = null; return false; }
+    const seen = known(st.det[u.team], t);
+    if (seen) { c.lx = t.x; c.ly = t.y; }
+    if (c.lx === undefined) { u.chase = null; return false; }
+    if (c.lx !== u.x || c.ly !== u.y) { const f = dirOf(c.lx - u.x, c.ly - u.y); if (f !== u.face) { u.face = f; ev.push({ t: 'face', u: u.id, face: f }); } }
+    const w = active(u).find(isAttack);
+    if (seen && w && inFan(u.x, u.y, u.face, w.rmin, rangeOf(u, w), w.angle, t.x, t.y) && (w.fx === '射線無視' || los(st, u.x, u.y, t.x, t.y))) return false;
+    if (Math.abs(c.lx - u.x) + Math.abs(c.ly - u.y) <= 1) { if (!seen) u.chase = null; return false; }
+    const reserve = (st.db.rules['追跡予約'] > 0 && w) ? attackCost(u, w) : 0;
+    const blocked = occ.map(o => !!o); blocked[c.ly * st.w + c.lx] = false; blocked[u.y * st.w + u.x] = false;
+    const p = pathTo(st, u, u.x, u.y, c.lx, c.ly, 999, blocked);
+    if (!p || !p.steps.length) return false;
+    const s = p.steps[0], cost = stepCost(st, u, u.x, u.y, s.x, s.y);
+    if (cost < 0 || cost + reserve > u.ap || occ[s.y * st.w + s.x]) return false;
+    return tryMove(st, u, s.x, s.y, false, occ, ev) === 'moved';
+  }
+
+  function pickTarget(st, u, w) {
+    const det = st.det[u.team]; let best = null, bd = Infinity; const r = rangeOf(u, w);
+    for (const e of st.units) {
+      if (!e.alive || e.team === u.team || !known(det, e)) continue;
+      if (!inFan(u.x, u.y, u.face, w.rmin, r, w.angle, e.x, e.y)) continue;
+      if (w.fx !== '射線無視' && !los(st, u.x, u.y, e.x, e.y)) continue;
+      const d = dist(u.x, u.y, e.x, e.y) + e.hp / 10000;
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
+  /* 見込みの数字(画面とAI用)。乱数と急所を除く */
+  function hitRate(st, a, w) { return clamp(w.hit + sum(a, '命中', w), 0, 100); }
+  function evadeRate(st, t, a, w) {
+    const R = st.db.rules; let bonus = 0, aware = has(t, '全方位回避');
+    for (const tr of active(t)) {
+      if (tr.cls === '防御') continue;
+      if (inFan(t.x, t.y, t.face, 0, rangeOf(t, tr), tr.angle, a.x, a.y)) { aware = true; if (tr.cls === '回避') bonus += tr.pow; }
+    }
+    if (!aware) return 0;
+    if (has(a, '必中', w) && !has(t, '全方位回避')) return 0;
+    return clamp(R['基礎回避'] + t.m.st.eva * R['回避係数'] - a.m.st.tec * R['技術係数'] + bonus + sum(t, '回避', w), 0, R['最大回避']);
+  }
+  function powerOf(st, a, w, d) {
+    let m = 1 + (w.ref ? a.m.st[w.ref] : 0) * st.db.rules['威力係数'];
+    m *= 1 + sum(a, '威力', w) / 100;
+    for (const f of fxOf(a, '近距離強化')) if (match(f, w) && d <= f.v + 0.5) m *= 1 + f.v2 / 100;
+    return w.pow * m;
+  }
+  function shieldsFor(st, t, a) {
+    if (cloaked(t)) return [];
+    return active(t).filter(s => s.cls === '防御' && inFan(t.x, t.y, t.face, 0, s.rmax, s.angle, a.x, a.y));
+  }
+  function reduceRate(st, t, a, w, dry) {
+    const R = st.db.rules; let red = t.m.st.def * R['防御軽減係数'], defended = false, ap = t.ap;
+    for (const s of shieldsFor(st, t, a)) {
+      const cost = s.cost + sum(a, '足止め', w);
+      if (ap < cost) continue;
+      ap -= cost; defended = true;
+      red += s.pow * (1 + (s.ref ? t.m.st[s.ref] : 0) * R['シールド係数']);
+      if (!dry) { t.ap -= cost; if (!has(t, '防御待ち無効', w)) t.wait = Math.max(t.wait, s.wait + sum(a, '足止め', w)); }
+    }
+    if (defended) red += sum(t, '防御', w);
+    return { red: clamp(red, 0, R['最大軽減']), defended };
+  }
+  function estimate(st, a, w, t) {
+    const d = dist(a.x, a.y, t.x, t.y), r = reduceRate(st, t, a, w, true);
+    return { hit: Math.round(hitRate(st, a, w) * (1 - evadeRate(st, t, a, w) / 100)), dmg: w.pow > 0 ? Math.max(1, Math.round(powerOf(st, a, w, d) * (1 - r.red / 100))) : 0, defended: r.defended };
+  }
+
+  function resolve(st, a, w, t, follow, ev) {
+    const R = st.db.rules;
+    if (!t.alive) return;
+    ev.push({ t: 'atk', a: a.id, u: t.id, w: w.id, follow: !!follow, ax: a.x, ay: a.y, tx: t.x, ty: t.y });
+    if (st.rand() * 100 >= hitRate(st, a, w)) { ev.push({ t: 'miss', u: t.id, a: a.id }); return; }
+    const er = evadeRate(st, t, a, w);
+    if (er > 0 && st.rand() * 100 < er) {
+      for (const f of fxOf(a, '足止め')) if (match(f, w) && f.v2 > 0) t.ap = Math.max(0, t.ap - f.v);
+      ev.push({ t: 'evade', u: t.id, a: a.id }); return;
+    }
+    const d = dist(a.x, a.y, t.x, t.y), tx = t.x, ty = t.y;
+    const rd = reduceRate(st, t, a, w, false);
+    let vary = 1 + (st.rand() * 2 - 1) * R['乱数幅'] / 100;
+    for (const f of fxOf(a, '威力ぶれ')) if (match(f, w)) vary = (f.v + st.rand() * (f.v2 - f.v)) / 100;
+    const pw = powerOf(st, a, w, d) * vary;
+    if (w.pow > 0) {
+      const dmg = Math.max(1, Math.round(pw * (1 - rd.red / 100)));
+      t.hp -= dmg; a.dealt += dmg;
+      const vital = t.hp > 0 && st.rand() * 100 < sum(a, '即離脱', w);
+      if (vital) t.hp = 0;
+      ev.push({ t: 'hit', u: t.id, a: a.id, dmg, def: rd.defended, vital });
+    } else ev.push({ t: 'hit', u: t.id, a: a.id, dmg: 0, def: false });
+    if (w.fx === '鈍足') { t.ap = Math.max(0, t.ap - w.fxv); t.slowNext = Math.max(t.slowNext, w.fxv); ev.push({ t: 'slow', u: t.id, v: w.fxv }); }
+    if (t.hp <= 0) bail(st, t, a, ev);
+    const br = blastOf(a, w);
+    if (br > 0 && w.pow > 0) {
+      for (const o of st.units) {
+        if (!o.alive || o.team === a.team || o === t || Math.max(Math.abs(o.x - tx), Math.abs(o.y - ty)) > br) continue;
+        const dmg = Math.max(1, Math.round(pw * 0.6 * (1 - clamp(o.m.st.def * R['防御軽減係数'], 0, R['最大軽減']) / 100)));
+        o.hp -= dmg; a.dealt += dmg; ev.push({ t: 'hit', u: o.id, a: a.id, dmg, splash: true });
+        if (o.hp <= 0) bail(st, o, a, ev);
+      }
+    }
+    if (follow || !t.alive || cloaked(t)) return;
+    // 連携: 味方が攻撃した敵を、連携スキル持ちが追撃する
+    for (const c of st.units) {
+      if (!t.alive) break;
+      if (!c.alive || c.team !== a.team || c === a || c.links <= 0 || cloaked(c)) continue;
+      for (const f of fxOf(c, '連携')) {
+        const wc = active(c).find(x => isAttack(x) && (!f.target || x.cls === f.target || x.id === f.target));
+        if (!wc || c.ap < f.v) continue;
+        if (!inFan(c.x, c.y, c.face, wc.rmin, rangeOf(c, wc), wc.angle, t.x, t.y)) continue;
+        if (wc.fx !== '射線無視' && !los(st, c.x, c.y, t.x, t.y)) continue;
+        c.ap -= f.v; c.links--; resolve(st, c, wc, t, true, ev); break;
+      }
+    }
+  }
+
+  const aliveOf = (st, team) => st.units.filter(u => u.alive && u.team === team).length;
+
+  function runTurn(st) {
+    const R = st.db.rules, out = [];
+    if (st.over) return out;
+    for (const u of st.units) {
+      if (!u.alive) continue;
+      u.ap = Math.max(0, apMax(st, u) - u.slowNext); u.slowNext = 0; u.wait = 0; u.stall = 0; u.chase = null; u.waited = false;
+      u.links = Math.floor(u.m.st.sup * R['連携援護係数']);
+      u.q = (u.plan || []).slice(); u.plan = [];
+    }
+    out.push({ t: 'turn', n: st.turn });
+    const maxTicks = Math.max(1, Math.round(R['最大アクション']));
+    for (let tick = 1; tick <= maxTicks; tick++) {
+      const ev = []; let busy = false;
+      const order = st.units.filter(u => u.alive).map(u => ({ u, k: u.m.st.eva + st.rand() })).sort((a, b) => b.k - a.k).map(o => o.u);
+      const occ = occupancy(st);
+      for (const u of order) {
+        if (u.wait > 0) { u.wait--; u.waited = true; busy = true; continue; }
+        u.waited = false;
+        while (u.q.length && u.q[0].type !== 'move') {
+          const c = u.q.shift();
+          if (c.type === 'face') { if (u.face !== c.dir) { u.face = c.dir; ev.push({ t: 'face', u: u.id, face: c.dir }); } }
+          else if (c.type === 'set') { if (applySet(st, u, c)) ev.push({ t: 'set', u: u.id, mi: u.mi, si: u.si }); }
+          else if (c.type === 'chase') { u.chase = { target: c.target }; u.q = []; }
+        }
+        if (u.chase) { if (chaseStep(st, u, occ, ev)) busy = true; }
+        else if (u.q.length) {
+          const c = u.q[0], r = tryMove(st, u, c.x, c.y, c.keep, occ, ev);
+          if (r === 'moved') { u.q.shift(); u.stall = 0; busy = true; }
+          else if (r === 'blocked') { u.stall++; if (u.stall > R['足踏み上限']) u.q = []; busy = true; }
+          else u.q = [];
+        }
+      }
+      st.det = { A: detect(st, 'A'), B: detect(st, 'B') };
+      const queue = [];
+      for (const u of order) {
+        if (!u.alive || u.waited || cloaked(u)) continue;
+        let wait = 0, fired = false;
+        for (const w of active(u)) {
+          if (!isAttack(w)) continue;
+          const cost = attackCost(u, w); if (u.ap < cost) continue;
+          const t = pickTarget(st, u, w); if (!t) continue;
+          u.ap -= cost; wait = Math.max(wait, w.wait); fired = true; queue.push({ a: u, w, t });
+        }
+        if (fired) u.wait = Math.max(u.wait, wait);
+      }
+      if (queue.length) {
+        busy = true;
+        const first = queue.filter(q => has(q.a, '先制')), rest = queue.filter(q => !has(q.a, '先制'));
+        for (const q of first) if (q.a.alive) resolve(st, q.a, q.w, q.t, false, ev);
+        const live = rest.filter(q => q.a.alive);
+        for (const q of live) resolve(st, q.a, q.w, q.t, false, ev);
+        st.det = { A: detect(st, 'A'), B: detect(st, 'B') };
+      }
+      if (ev.length) out.push({ t: 'tick', n: tick, ev, seen: [...st.det.A.seen], radar: [...st.det.A.radar], ap: st.units.filter(u => u.alive).map(u => [u.id, u.ap, u.hp]) });
+      if (!busy || !aliveOf(st, 'A') || !aliveOf(st, 'B')) break;
+    }
+    for (const u of st.units) { u.q = []; u.chase = null; u.wait = 0; }
+    st.turn++;
+    const a = aliveOf(st, 'A'), b = aliveOf(st, 'B');
+    if (st.turn > st.ex.turns || !a || !b) {
+      st.over = true; const diff = a - b, ex = st.ex;
+      const winner = Math.abs(diff) >= ex.need ? (diff > 0 ? 'A' : 'B') : null;
+      st.result = { a, b, diff, winner, turns: st.turn - 1, pts: { A: winner === 'A' ? ex.win : winner ? ex.lose : ex.draw, B: winner === 'B' ? ex.win : winner ? ex.lose : ex.draw } };
+      out.push({ t: 'end' });
+    }
+    return out;
+  }
+
+  /* ---------- AI: 1部隊ぶんの動きを設定する ---------- */
+  function planUnit(st, u, det, claimed) {
+    const plan = [], R = st.db.rules;
+    const foes = st.units.filter(e => e.alive && e.team !== u.team && known(det, e));
+    const w = primary(u);
+    const wantMain = w ? u.m.mainOpts.indexOf(w) : -1;
+    if (wantMain >= 0 && wantMain !== u.mi) plan.push({ type: 'set', slot: 'main', idx: wantMain });
+    let near = null, nd = Infinity;
+    for (const e of foes) { const d = dist(u.x, u.y, e.x, e.y) + e.hp / 1000; if (d < nd) { nd = d; near = e; } }
+    const ap = Math.max(0, apMax(st, u) - u.slowNext);
+    const r = w ? rangeOf(u, w) : 1;
+    // サブ: 基本はシールド。遠くにいる狙撃手はバッグワーム、元気な両攻撃持ちは攻撃
+    const subs = u.m.subOpts; let wantSub = subs.findIndex(t => t.cls === '防御');
+    const bag = subs.findIndex(t => t.fx === 'レーダー非表示'), dual = subs.findIndex(isAttack);
+    if (w && w.cls === '狙撃' && bag >= 0 && (!near || nd > 6)) wantSub = bag;
+    else if (dual >= 0 && near && nd <= r + 4 && u.hp >= u.max * 0.6 && (wantSub < 0 || u.hp >= u.max * 0.85)) wantSub = dual;
+    if (wantSub < 0 && subs.length) wantSub = 0;
+    if (wantSub >= 0 && wantSub !== u.si) plan.push({ type: 'set', slot: 'sub', idx: wantSub });
+
+    const fwd = u.team === 'A' ? 2 : 6;
+    if (!near) {
+      // 敵が見えない: 中央の十字路へ向かって前進
+      const tx = clamp(Math.round(st.w / 2 + (u.team === 'A' ? -2 : 2) + (st.rand() * 4 - 2)), 0, st.w - 1), ty = clamp(Math.round(u.y + (st.h / 2 - u.y) * 0.5), 0, st.h - 1);
+      const f = costField(st, u, u.x, u.y, Math.floor(ap * 0.7));
+      let best = null, bs = Infinity;
+      for (let i = 0; i < f.best.length; i++) {
+        if (f.best[i] === Infinity || claimed.has(i)) continue;
+        const x = i % st.w, y = (i / st.w) | 0, s = dist(x, y, tx, ty) * 2 + f.best[i] * 0.2 - H(st, x, y) * (w && w.cls === '狙撃' ? 2 : 0);
+        if (s < bs) { bs = s; best = i; }
+      }
+      if (best !== null) { claimed.add(best); for (const s of pathFrom(st, f, best % st.w, (best / st.w) | 0)) plan.push({ type: 'move', x: s.x, y: s.y }); }
+      plan.push({ type: 'face', dir: fwd });
+      return plan;
+    }
+    if (!w) { plan.push({ type: 'face', dir: dirOf(near.x - u.x, near.y - u.y) }); return plan; }
+    if (w.cls === '近接' || r <= 3) { plan.push({ type: 'chase', target: near.id }); return plan; }
+    // 射撃・狙撃: 射程と射線の通る場所へ動いて構える
+    const cost = attackCost(u, w), budget = Math.max(0, ap - cost * 2);
+    const f = costField(st, u, u.x, u.y, budget);
+    const sniper = w.cls === '狙撃', prefer = sniper ? clamp(r * 0.6, w.rmin + 2, r - 1) : r * 0.75;
+    let best = null, bs = -Infinity;
+    for (let i = 0; i < f.best.length; i++) {
+      if (f.best[i] === Infinity || (claimed.has(i) && i !== u.y * st.w + u.x)) continue;
+      const x = i % st.w, y = (i / st.w) | 0, d = dist(x, y, near.x, near.y);
+      const ok = d <= r && d >= w.rmin && (w.fx === '射線無視' || los(st, x, y, near.x, near.y));
+      let threat = 0; for (const e of foes) if (dist(x, y, e.x, e.y) <= 3.5) threat++;
+      const s = (ok ? 100 : 0) - Math.abs(d - prefer) * 3 - f.best[i] + H(st, x, y) * (sniper ? 6 : 2) - threat * 8 + st.rand();
+      if (s > bs) { bs = s; best = i; }
+    }
+    let ex = u.x, ey = u.y;
+    if (best !== null) { claimed.add(best); ex = best % st.w; ey = (best / st.w) | 0; for (const s of pathFrom(st, f, ex, ey)) plan.push({ type: 'move', x: s.x, y: s.y }); }
+    if (ex !== near.x || ey !== near.y) plan.push({ type: 'face', dir: dirOf(near.x - ex, near.y - ey) });
+    return plan;
+  }
+
+  function planAI(st, team, only) {
+    const det = detect(st, team), claimed = new Set();
+    for (const u of st.units) if (u.alive && u.team === team && only && !only(u)) claimed.add(planEnd(st, u, u.plan).y * st.w + planEnd(st, u, u.plan).x);
+    for (const u of st.units) {
+      if (!u.alive || u.team !== team || (only && !only(u))) continue;
+      u.plan = planUnit(st, u, det, claimed);
+    }
+  }
+
+  function runAuto(st) {
+    let guard = 0;
+    while (!st.over && guard++ < 100) { planAI(st, 'A'); planAI(st, 'B'); runTurn(st); }
+    return st.result;
+  }
+
+  return {
+    ATTACK, CLASSES, TRIG_FX, SKILL_FX, DIRS8, DIR_NAMES, num, str, list, rng, buildDB, newMatch, runTurn, planAI, planUnit, runAuto, detect, known,
+    terrAt, H, dist, dirOf, inFan, los, stepCost, costField, pathFrom, pathTo, planEnd, fanTiles, apMax, active, mainOf, subOf, isAttack, cloaked, offRadar,
+    rangeOf, attackCost, startCost, climbOf, visionOf, primary, estimate, hitRate, sum, has, aliveOf,
+  };
+});
+
+</script>
+<script>
+/* 画面。エンジンの状態を描き、動きの設定と表の編集を受け付ける。 */
+(function () {
+  'use strict';
+  const D = window.SIM_DATA, E = window.SIM_ENGINE;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const LS_TABLES = 'simdrill.tables.v1', LS_SET = 'simdrill.settings.v1';
+  const store = {
+    get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 保存できなくても動かす */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* 同上 */ } },
+  };
+
+  function normalize(tables) {
+    const out = {};
+    for (const s of D.SCHEMA) {
+      out[s.name] = (tables && Array.isArray(tables[s.name]) ? tables[s.name] : []).map(r => {
+        const o = {}; for (const [c] of s.cols) o[c] = (r[c] === undefined || r[c] === null) ? '' : String(r[c]); return o;
+      });
+    }
+    return out;
+  }
+  const DEFAULTS = normalize(D.TABLES);
+  const DEFAULT_RULES = E.buildDB(DEFAULTS).db.rules;
+  const schemaOf = name => D.SCHEMA.find(s => s.name === name);
+
+  let tables, draft, db, st = null, disp = {};
+  const ui = { gen: 0, sheet: 'ユニット', exercise: '', teamA: '', teamB: '', helpA: [], control: 'A', speed: 1, phase: 'plan', sel: null, inspect: null, keep: false, chaseMode: false, seg: 0, field: null, view: { seen: new Set(), radar: new Set() }, log: [], tick: 0, skip: false, autoAll: false, errors: [], applyNote: '', league: null, leagueRunning: false, timeLeft: 0, timer: null, msg: '', rec: { turns: [] }, rp: { on: false, i: 0, k: 0, playing: false, token: 0 }, watch: null };
+  let downloads = null;
+  const tok = {};
+  const t = k => (db && db.terms[k]) || k;
+
+  /* ---------- 表の読み込みと反映 ---------- */
+  function loadTables() {
+    const raw = store.get(LS_TABLES);
+    if (raw) { const n = normalize(raw); if (!E.buildDB(n, DEFAULT_RULES).errors.length) return n; }
+    return clone(DEFAULTS);
+  }
+  function applyTables(tb) {
+    tables = tb; draft = clone(tb);
+    db = E.buildDB(tables, DEFAULT_RULES).db;
+    if (!db.exercises[ui.exercise]) ui.exercise = db.exOrder[0];
+    if (!db.squadOrder.includes(ui.teamA)) ui.teamA = db.squadOrder.includes('S7') ? 'S7' : db.squadOrder[0];
+    if (!db.squadOrder.includes(ui.teamB) || ui.teamB === ui.teamA) ui.teamB = db.squadOrder.find(s => s !== ui.teamA);
+    fixHelp();
+    $('#brandTitle').textContent = t('タイトル'); $('#brandSub').textContent = t('サブタイトル');
+    ui.league = null;
+  }
+  function fixHelp() { const ex = db.exercises[ui.exercise]; ui.helpA = ui.helpA.filter(h => ex.help.includes(h)).slice(0, ex.helpN); }
+  function saveSettings() { store.set(LS_SET, { exercise: ui.exercise, teamA: ui.teamA, teamB: ui.teamB, helpA: ui.helpA, control: ui.control, speed: ui.speed }); }
+
+  /* ---------- 試合 ---------- */
+  const unitById = id => st.units.find(u => u.id === id);
+  const sqOf = u => db.squads[u.squad];
+  const sleep = ms => new Promise(r => setTimeout(r, ms * ui.speed));
+  const mine = u => u.team === 'A';
+  const playing = () => ui.control === 'A' && !ui.autoAll && !ui.rp.on && !ui.watch;
+  const pe = u => E.planEnd(st, u, u.plan);
+  const lab = u => `${esc(u.label)}${u.n ? `<sub>${u.n}</sub>` : ''}`;
+
+  function syncDisp() {
+    for (const u of st.units) disp[u.id] = { x: u.x, y: u.y, face: u.face, hp: u.hp, ap: u.alive ? E.planEnd(st, u, []).ap : 0, alive: u.alive, mi: u.mi, si: u.si };
+    ui.view = st.det.A;
+  }
+
+  function startMatch() {
+    ui.gen++; stopTimer();
+    st = E.newMatch(db, { exercise: ui.exercise, teamA: ui.teamA, teamB: ui.teamB, helpA: ui.helpA });
+    Object.assign(ui, { phase: 'plan', sel: null, inspect: null, chaseMode: false, log: [], tick: 0, skip: false, autoAll: false, resultClosed: false, field: null, msg: '', rec: { turns: [] }, rp: { on: false, i: 0, k: 0, playing: false, token: ui.rp.token + 1 }, watch: null });
+    disp = {};
+    buildBoard(); syncDisp(); renderSetup(); renderAll();
+    if (ui.control === 'none') setTimeout(() => go(), 500); else startTimer();
+  }
+
+  function buildBoard() {
+    const board = $('#board'); board.style.setProperty('--w', st.w); board.style.setProperty('--h', st.h);
+    let h = '';
+    for (let y = 0; y < st.h; y++) for (let x = 0; x < st.w; x++) {
+      const tr = E.terrAt(st, x, y);
+      h += `<div class="cell${tr.h > 0 ? ' hi' : ''}${tr.pass ? '' : ' wall'}" data-x="${x}" data-y="${y}" style="--t:${tr.color}" title="${esc(tr.name)} 高さ${tr.h}">${tr.h > 0 && tr.pass ? `<b>${tr.h}</b>` : ''}</div>`;
+    }
+    $('#cells').innerHTML = h;
+    const layer = $('#units'); layer.innerHTML = '';
+    for (const k in tok) delete tok[k];
+    for (const u of st.units) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'unit' + (mine(u) ? '' : ' foe'); b.dataset.id = u.id;
+      b.style.setProperty('--c', sqOf(u).color);
+      b.setAttribute('aria-label', `${u.name}(${sqOf(u).name})`);
+      b.innerHTML = `<span>${lab(u)}</span><span class="dir"></span><i><b></b></i>`;
+      layer.appendChild(b); tok[u.id] = b;
+    }
+    for (const id of ['fxsvg', 'plansvg']) { $('#' + id).setAttribute('viewBox', `0 0 ${st.w} ${st.h}`); $('#' + id).innerHTML = ''; }
+    [...$('#fx').querySelectorAll('.pop,.beam,.bailtext')].forEach(n => n.remove());
+    const hs = Object.values(db.terrain).filter(tr => tr.pass).map(tr => `<span style="--t:${tr.color}"><i></i>${esc(tr.name)}${tr.h ? `(高さ${tr.h})` : ''}</span>`).join('');
+    $('#legend').innerHTML = hs + `<span><i class="k" style="background:var(--atk)"></i>攻撃の射程</span><span><i class="k" style="background:var(--def)"></i>防御の範囲</span><span><i class="k" style="background:var(--eva)"></i>回避の警戒範囲</span><span><i class="k" style="background:var(--signal)"></i>移動できるマス</span>`;
+  }
+
+  /* 画面に見せてよい相手か */
+  function visOf(u) {
+    const d = disp[u.id]; if (!d || !d.alive) return 'none';
+    if (mine(u) || ui.control === 'none' || st.over || ui.watch) return 'full';
+    if (ui.view.seen.has(u.id)) return 'full';
+    if (ui.view.radar.has(u.id)) return 'blip';
+    return 'none';
+  }
+  const trigOf = (u, d) => [u.m.mainOpts[d.mi], u.m.subOpts[d.si]].filter(Boolean);
+
+  function renderTokens() {
+    for (const u of st.units) {
+      const n = tok[u.id], d = disp[u.id], v = visOf(u);
+      n.hidden = v === 'none'; if (v === 'none') continue;
+      n.style.left = ((d.x + .5) / st.w * 100) + '%'; n.style.top = ((d.y + .5) / st.h * 100) + '%';
+      n.style.setProperty('--f', d.face);
+      const blip = v === 'blip';
+      n.classList.toggle('blip', blip);
+      n.children[0].hidden = blip; n.children[1].hidden = blip; n.children[2].hidden = blip;
+      n.classList.toggle('sel', ui.sel === u.id);
+      n.classList.toggle('inspect', ui.inspect === u.id);
+      n.classList.toggle('planned', ui.phase === 'plan' && playing() && mine(u) && u.plan.length > 0);
+      n.classList.toggle('pickable', ui.chaseMode && !mine(u));
+      n.classList.toggle('cloak', trigOf(u, d).some(w => w.fx === '透明'));
+      n.children[2].firstElementChild.style.width = Math.max(0, Math.min(100, d.hp / u.max * 100)) + '%';
+    }
+  }
+
+  const ang = face => Math.atan2(E.DIRS8[face][1], E.DIRS8[face][0]);
+  function arcPath(cx, cy, r, face, angle) {
+    if (angle >= 360) return `M${cx - r} ${cy}A${r} ${r} 0 1 1 ${cx + r} ${cy}A${r} ${r} 0 1 1 ${cx - r} ${cy}`;
+    const a = ang(face), h = angle / 2 * Math.PI / 180;
+    return `M${cx + r * Math.cos(a - h)} ${cy + r * Math.sin(a - h)}A${r} ${r} 0 ${angle > 180 ? 1 : 0} 1 ${cx + r * Math.cos(a + h)} ${cy + r * Math.sin(a + h)}`;
+  }
+
+  /* 設定中の経路・射程・移動できるマスを重ねて描く */
+  function renderOverlay() {
+    const cells = $('#cells').children;
+    for (const c of cells) c.classList.remove('reach', 'fa', 'fa0');
+    let svg = ''; ui.field = null;
+    const planning = ui.phase === 'plan' && playing() && !st.over;
+    if (planning) {
+      for (const u of st.units) {
+        if (!u.alive || !mine(u) || !u.plan.length) continue;
+        const p = pe(u), cur = u.id === ui.sel;
+        if (p.path.length > 1) svg += `<polyline class="path${cur ? ' cur' : ''}" points="${p.path.map(q => `${q.x + .5},${q.y + .5}`).join(' ')}"/>`;
+        if (p.chase) { const e = unitById(p.chase), d = e && disp[e.id]; if (d && visOf(e) !== 'none') svg += `<line class="chase" x1="${p.x + .5}" y1="${p.y + .5}" x2="${d.x + .5}" y2="${d.y + .5}"/>`; }
+      }
+    }
+    // 射程を見せる相手: 設定中の自ユニット(計画の終点)、または調べている相手(今の位置)
+    let src = null;
+    const su = ui.sel ? unitById(ui.sel) : null, iu = ui.inspect ? unitById(ui.inspect) : null;
+    if (planning && su && su.alive && !iu) {
+      const p = pe(su); src = { u: su, x: p.x, y: p.y, face: p.face, ws: [su.m.mainOpts[p.mi], su.m.subOpts[p.si]].filter(Boolean) };
+      if (!p.chase) {
+        const f = E.costField(st, su, p.x, p.y, p.ap); ui.field = f;
+        for (let i = 0; i < f.best.length; i++) if (f.best[i] < Infinity && f.best[i] > 0) cells[i].classList.add('reach');
+      }
+      if (p.x !== su.x || p.y !== su.y) svg += `<circle class="ghost" cx="${p.x + .5}" cy="${p.y + .5}" r=".34"/>`;
+      svg += `<circle class="vis" cx="${p.x + .5}" cy="${p.y + .5}" r="${db.rules['基礎視界'] + E.H(st, p.x, p.y) * db.rules['高所視界'] + .5}"/>`;
+    } else if (iu && visOf(iu) === 'full') {
+      const d = disp[iu.id]; src = { u: iu, x: d.x, y: d.y, face: d.face, ws: trigOf(iu, d) };
+    }
+    if (src) {
+      const hide = src.ws.some(w => w.fx === '透明');
+      for (const w of src.ws) {
+        if (E.isAttack(w)) { if (!hide) for (const c of E.fanTiles(st, src.u, src.x, src.y, src.face, w)) cells[c.y * st.w + c.x].classList.add(c.see ? 'fa' : 'fa0'); }
+        else if (w.cls === '防御') { if (!hide) svg += `<path class="arc-def" d="${arcPath(src.x + .5, src.y + .5, 1.15, src.face, w.angle)}"/>`; }
+        else if (w.cls === '回避') svg += `<path class="arc-eva" d="${arcPath(src.x + .5, src.y + .5, 1.5, src.face, w.angle)}"/>`;
+      }
+    }
+    $('#plansvg').innerHTML = svg;
+  }
+
+  /* ---------- 行動の再生 ---------- */
+  function shot(ev, color, hit) {
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('x1', ev.ax + .5); ln.setAttribute('y1', ev.ay + .5); ln.setAttribute('x2', ev.tx + .5); ln.setAttribute('y2', ev.ty + .5);
+    ln.setAttribute('stroke', color); ln.setAttribute('stroke-width', ev.follow ? .09 : .15); ln.setAttribute('class', 'shot');
+    $('#fxsvg').appendChild(ln); setTimeout(() => ln.remove(), 700);
+  }
+  function pop(x, y, text, cls) {
+    const n = document.createElement('div'); n.className = 'pop ' + (cls || ''); n.textContent = text;
+    n.style.left = ((x + .5) / st.w * 100) + '%'; n.style.top = ((y + .5) / st.h * 100) + '%';
+    $('#fx').appendChild(n); setTimeout(() => n.remove(), 1000);
+  }
+  function beam(u, d) {
+    const c = sqOf(u).color, fx = $('#fx');
+    const b = document.createElement('div'); b.className = 'beam'; b.style.setProperty('--c', c);
+    b.style.left = ((d.x + .5) / st.w * 100) + '%'; b.style.height = ((d.y + .5) / st.h * 100) + '%';
+    const tx = document.createElement('div'); tx.className = 'bailtext'; tx.style.setProperty('--c', c); tx.textContent = t('離脱');
+    tx.style.left = Math.min(86, Math.max(14, (d.x + .5) / st.w * 100)) + '%'; tx.style.top = Math.max(8, (d.y - .4) / st.h * 100) + '%';
+    fx.appendChild(b); fx.appendChild(tx); setTimeout(() => { b.remove(); tx.remove(); }, 1100);
+  }
+  function pushLog(html, cls, color) { ui.log.push({ html, cls: cls || '', color: color || '' }); if (ui.log.length > 500) ui.log.shift(); }
+  const nm = u => `<b>${esc(u.name)}</b>`;
+
+  /* 1アクションぶんの出来事を、表示用の状態に反映する部品 */
+  function applyMoves(tev) {
+    let moved = false;
+    for (const e of tev.ev) {
+      const d = disp[e.u];
+      if (e.t === 'move') { d.x = e.x; d.y = e.y; d.face = e.face; moved = true; }
+      else if (e.t === 'face') { d.face = e.face; moved = true; }
+      else if (e.t === 'set') { d.mi = e.mi; d.si = e.si; }
+    }
+    return moved;
+  }
+  const setView = tev => { ui.view = { seen: new Set(tev.seen), radar: new Set(tev.radar) }; };
+  function applyFights(tev, fx) {
+    let fights = 0;
+    for (const e of tev.ev) {
+      const u = e.u ? unitById(e.u) : null, a = e.a ? unitById(e.a) : null, d = e.u ? disp[e.u] : null;
+      const seenT = fx && u && visOf(u) !== 'none';
+      if (e.t === 'atk') { fights++; if (fx && (visOf(a) !== 'none' || mine(a))) shot(e, sqOf(a).color); }
+      else if (e.t === 'miss' || e.t === 'evade') { if (seenT) pop(d.x, d.y, e.t === 'miss' ? '外れ' : '回避', 'miss'); }
+      else if (e.t === 'hit') { d.hp = Math.max(0, d.hp - e.dmg); if (seenT && e.dmg > 0) pop(d.x, d.y, '−' + e.dmg, e.vital ? 'crit' : ''); }
+      else if (e.t === 'slow') { if (seenT) pop(d.x, d.y, `${t('行動力')}−${e.v}`, 'leak'); }
+      else if (e.t === 'bail') { if (seenT) beam(u, d); d.alive = false; d.hp = 0; }
+    }
+    for (const [id, ap, hp] of tev.ap) { disp[id].ap = ap; disp[id].hp = hp; }
+    return fights;
+  }
+  function logTick(tev) {
+    let last = null;
+    for (const e of tev.ev) {
+      const u = e.u ? unitById(e.u) : null, a = e.a ? unitById(e.a) : null;
+      const wn = () => `${esc(db.triggers[last.w].name)}${last.follow ? `(${esc(t('連携'))})` : ''}`;
+      if (e.t === 'atk') last = e;
+      else if (e.t === 'miss' || e.t === 'evade') pushLog(`${nm(a)} → ${nm(u)} ${wn()}… ${e.t === 'miss' ? '外れ' : '回避'}`, 'dim', sqOf(a).color);
+      else if (e.t === 'hit') {
+        if (e.splash) pushLog(`爆発に巻き込み ${nm(u)} −${e.dmg}`, '', sqOf(a).color);
+        else pushLog(`${nm(a)} → ${nm(u)} ${wn()} <b>−${e.dmg}</b>${e.def ? '(防御)' : ''}${e.vital ? ' 急所' : ''}`, '', sqOf(a).color);
+      }
+      else if (e.t === 'slow') pushLog(`${nm(u)} の${esc(t('行動力'))} −${e.v}`, 'dim');
+      else if (e.t === 'bail') pushLog(`${nm(u)} ${esc(t('離脱'))}`, 'out', sqOf(u).color);
+    }
+  }
+  const quickTick = tev => { applyMoves(tev); setView(tev); applyFights(tev, false); };
+  /* 1アクションを動きつきで見せる。途中で取り消されたら false */
+  async function playTick(tev, cancelled) {
+    ui.tick = tev.n;
+    if (applyMoves(tev)) { renderTokens(); $('#phaseLabel').innerHTML = phaseText(); await sleep(190); if (cancelled()) return false; }
+    setView(tev); renderTokens(); logTick(tev);
+    const fights = applyFights(tev, true);
+    renderTokens(); renderVersus(); renderLog(); $('#phaseLabel').innerHTML = phaseText();
+    if (fights) { await sleep(Math.min(520, 240 + fights * 50)); if (cancelled()) return false; }
+    return true;
+  }
+
+  /* 記録: 各ターンの開始時の盤面と、そのターンに起きた出来事 */
+  const snap = () => ({ d: clone(disp), seen: [...ui.view.seen], radar: [...ui.view.radar] });
+  const loadSnap = sn => { disp = clone(sn.d); ui.view = { seen: new Set(sn.seen), radar: new Set(sn.radar) }; };
+  function buildLog(i, k) {
+    ui.log = []; const T = ui.rec.turns;
+    for (let j = 0; j <= i && j < T.length; j++) {
+      pushLog(`${esc(t('ターン'))} ${T[j].n}`, 'rd');
+      const n = j < i ? T[j].ticks.length : k;
+      for (let x = 0; x < n; x++) logTick(T[j].ticks[x]);
+    }
+    if (st.over && T.length && i >= T.length - 1 && k >= T[T.length - 1].ticks.length) pushLog('試合終了', 'rd');
+  }
+
+  async function go() {
+    if (ui.phase !== 'plan' || st.over || ui.rp.on) return;
+    const gen = ui.gen; stopTimer();
+    const manual = playing();
+    ui.phase = 'run'; ui.chaseMode = false; ui.tick = 0; ui.msg = '';
+    E.planAI(st, 'B');
+    if (!manual) E.planAI(st, 'A');
+    const start = snap(), n = st.turn;
+    const ticks = E.runTurn(st).filter(e => e.t === 'tick');
+    ui.rec.turns.push({ n, start, ticks });
+    pushLog(`${esc(t('ターン'))} ${n}`, 'rd');
+    if (!ui.skip) renderAll();
+    for (const tev of ticks) {
+      if (ui.skip) { quickTick(tev); logTick(tev); }
+      else if (!(await playTick(tev, () => gen !== ui.gen))) return;
+    }
+    if (gen !== ui.gen) return;
+    if (st.over) pushLog('試合終了', 'rd');
+    syncDisp();
+    ui.phase = st.over ? 'over' : 'plan';
+    if (ui.sel && !unitById(ui.sel).alive) ui.sel = null;
+    ui.inspect = null;
+    if (st.over || !ui.skip) renderAll();
+    if (st.over) return;
+    if (!playing()) { if (!ui.skip) await sleep(350); if (gen === ui.gen) go(); }
+    else startTimer();
+  }
+
+  /* ---------- 結果の再生 ---------- */
+  const rpTotal = () => ui.rec.turns.reduce((n, T) => n + T.ticks.length, 0);
+  function rpPos() { let n = 0; for (let j = 0; j < ui.rp.i; j++) n += ui.rec.turns[j].ticks.length; return n + ui.rp.k; }
+  function clearFx() { $('#fxsvg').innerHTML = ''; [...$('#fx').querySelectorAll('.pop,.beam,.bailtext')].forEach(x => x.remove()); }
+  function rpSeek(i, k) {
+    const rp = ui.rp, T = ui.rec.turns[i]; if (!T) return;
+    rp.token++; rp.i = i; rp.k = Math.max(0, Math.min(k, T.ticks.length));
+    loadSnap(T.start);
+    for (let x = 0; x < rp.k; x++) quickTick(T.ticks[x]);
+    ui.tick = rp.k ? T.ticks[rp.k - 1].n : 0;
+    buildLog(i, rp.k); clearFx(); renderAll();
+  }
+  function rpSeekPos(p) {
+    const T = ui.rec.turns; let i = 0;
+    while (i < T.length - 1 && p > T[i].ticks.length) { p -= T[i].ticks.length; i++; }
+    ui.rp.playing = false; rpSeek(i, p);
+  }
+  function rpEnter(i, autoplay) {
+    if (!ui.rec.turns.length || ui.phase === 'run') return;
+    stopTimer();
+    Object.assign(ui, { sel: null, inspect: null, chaseMode: false, resultClosed: true });
+    ui.rp.on = true; ui.rp.playing = false;
+    rpSeek(i, 0);
+    if (autoplay) rpPlay();
+  }
+  async function rpPlay(once) {
+    const rp = ui.rp, tk = ++rp.token, T = ui.rec.turns, dead = () => tk !== rp.token || !rp.on;
+    // 最後まで見終わっているときは最初から
+    if (!once && rp.i === T.length - 1 && rp.k >= T[rp.i].ticks.length) { rpSeek(0, 0); rp.token = tk; }
+    rp.playing = !once; renderReplay(); renderPhase();
+    while (!dead()) {
+      const cur = T[rp.i];
+      if (rp.k < cur.ticks.length) { if (!(await playTick(cur.ticks[rp.k], dead))) return; rp.k++; renderReplay(); }
+      else if (rp.i < T.length - 1) {
+        if (!once) { await sleep(450); if (dead()) return; }
+        rp.i++; rp.k = 0; loadSnap(T[rp.i].start); ui.tick = 0; buildLog(rp.i, 0); renderAll();
+        if (!once) { await sleep(300); if (dead()) return; }
+      } else { if (st.over && (!ui.log.length || ui.log[ui.log.length - 1].html !== '試合終了')) { pushLog('試合終了', 'rd'); renderLog(); } break; }
+      if (once) break;
+    }
+    if (!dead()) { rp.playing = false; renderReplay(); renderPhase(); }
+  }
+  function rpPause() { ui.rp.token++; ui.rp.playing = false; renderReplay(); renderPhase(); }
+  function rpExit() {
+    const rp = ui.rp; rp.token++; rp.on = false; rp.playing = false;
+    syncDisp(); ui.tick = 0;
+    const T = ui.rec.turns; buildLog(T.length - 1, T.length ? T[T.length - 1].ticks.length : 0);
+    ui.resultClosed = false; clearFx(); renderAll();
+    if (ui.phase === 'plan' && playing()) startTimer();
+  }
+  function renderReplay() {
+    const bar = $('#rpBar'), T = ui.rec.turns, rp = ui.rp;
+    bar.hidden = !T.length || ui.phase === 'run';
+    if (bar.hidden) return;
+    $('#rpIdle').hidden = rp.on; $('#rpCtl').hidden = !rp.on;
+    const turnBtns = T.map((x, j) => `<button type="button" class="rp-turn" data-turn="${j}" aria-pressed="${rp.on && rp.i === j}">${x.n}</button>`).join('');
+    if (!rp.on) { $('#rpIdleTurns').innerHTML = turnBtns; return; }
+    $('#rpTurns').innerHTML = turnBtns;
+    $('#rpToggle').textContent = rp.playing ? '一時停止' : '再生';
+    const total = rpTotal(), pos = rpPos(), range = $('#rpRange');
+    range.max = total; if (+range.value !== pos) range.value = pos;
+    $('#rpPos').textContent = `${t('ターン')} ${T[rp.i].n}　アクション ${rp.k} / ${T[rp.i].ticks.length}`;
+    $('#rpExit').textContent = st.over ? '再生を終えて結果を見る' : '再生を終えて設定に戻る';
+  }
+
+  /* 総当たりの1試合を、同じ乱数の種でやり直して記録し、再生する */
+  function watchGame(g, exId) {
+    ui.gen++; stopTimer();
+    st = E.newMatch(db, { exercise: exId, teamA: g.a, teamB: g.b, seed: g.seed });
+    Object.assign(ui, { phase: 'plan', sel: null, inspect: null, chaseMode: false, log: [], tick: 0, skip: false, autoAll: false, resultClosed: true, field: null, msg: '', rec: { turns: [] }, rp: { on: false, i: 0, k: 0, playing: false, token: ui.rp.token + 1 }, watch: { a: g.a, b: g.b } });
+    disp = {}; buildBoard(); syncDisp();
+    let guard = 0;
+    while (!st.over && guard++ < 100) {
+      const start = snap(), n = st.turn;
+      E.planAI(st, 'A'); E.planAI(st, 'B');
+      const ticks = E.runTurn(st).filter(e => e.t === 'tick');
+      ui.rec.turns.push({ n, start, ticks });
+      for (const tev of ticks) quickTick(tev);
+      syncDisp();
+    }
+    ui.phase = 'over';
+    showTab('match'); try { history.replaceState(null, '', '#match'); } catch (err) { /* 無視 */ }
+    rpEnter(0, true);
+    $('#versus').scrollIntoView({ block: 'start' });
+  }
+
+  function startTimer() {
+    stopTimer();
+    const sec = Math.round(db.rules['設定時間'] || 0);
+    if (sec <= 0 || !playing()) { ui.timeLeft = 0; return; }
+    ui.timeLeft = sec; const gen = ui.gen;
+    ui.timer = setInterval(() => {
+      if (gen !== ui.gen || ui.phase !== 'plan') { stopTimer(); return; }
+      ui.timeLeft--; $('#phaseLabel').innerHTML = phaseText();
+      if (ui.timeLeft <= 0) { stopTimer(); go(); }
+    }, 1000);
+  }
+  function stopTimer() { if (ui.timer) { clearInterval(ui.timer); ui.timer = null; } }
+
+  /* ---------- 描画 ---------- */
+  function renderAll() { renderVersus(); renderPhase(); renderTokens(); renderOverlay(); renderCmd(); renderInfo(); renderRoster(); renderLog(); renderResult(); renderReplay(); }
+
+  function phaseText() {
+    if (ui.rp.on) return `再生<small>${esc(t('ターン'))} ${ui.rec.turns[ui.rp.i].n}　アクション ${ui.tick}</small>`;
+    if (st.over) return '試合終了';
+    if (ui.phase === 'run') return `${esc(t('行動'))}<small>アクション ${ui.tick}</small>`;
+    const left = ui.timeLeft > 0 ? `残り ${ui.timeLeft} 秒` : '';
+    return `${esc(t('設定'))}<small>${playing() ? left : 'AIが設定中'}</small>`;
+  }
+  function renderPhase() {
+    $('#phaseLabel').innerHTML = phaseText();
+    const can = ui.phase === 'plan' && playing() && !st.over;
+    $('#goBtn').disabled = !can; $('#autoAllBtn').disabled = !can;
+    $('#goBtn').hidden = $('#autoAllBtn').hidden = ui.control === 'none' || ui.rp.on || !!ui.watch || st.over;
+    $('#skipBtn').hidden = st.over || ui.skip || ui.rp.on;
+    $('#skipBtn').textContent = ui.control === 'none' ? '結果まで早送り' : '残りをAIに任せて結果を見る';
+  }
+
+  function renderVersus() {
+    const ex = st.ex, cnt = team => st.units.filter(u => u.team === team && disp[u.id] && disp[u.id].alive).length;
+    const card = team => {
+      const s = db.squads[st.teams[team]], us = st.units.filter(u => u.team === team), n = cnt(team);
+      return `<div class="side-card" style="--c:${s.color}"><span class="nm">${esc(s.name)}</span><span class="cnt">${n}<small>/ ${us.length} 体</small></span>
+        <span class="sub"><span class="pips">${us.map(u => `<i class="${disp[u.id].alive ? '' : 'out'}"></i>`).join('')}</span>${team === 'A' && ui.control === 'A' && !ui.watch ? '<span class="tag">自分</span>' : ''}</span></div>`;
+    };
+    const diff = cnt('A') - cnt('B'), ok = Math.abs(diff) >= ex.need;
+    const state = ok ? `${esc(db.squads[st.teams[diff > 0 ? 'A' : 'B']].abbr)} が ${Math.abs(diff)}体差で勝ち圏` : `差 ${Math.abs(diff)}体(${ex.need}体差未満は引き分け)`;
+    $('#versus').innerHTML = card('A') + `<div class="mid-card"><span class="turn">${esc(t('ターン'))} ${ui.rp.on ? ui.rec.turns[ui.rp.i].n : Math.min(st.turn, ex.turns)} / ${ex.turns}</span><span class="state${ok ? ' win' : ''}">${state}</span></div>` + card('B');
+  }
+
+  function trigLine(u, w) {
+    if (E.isAttack(w)) {
+      const r = E.rangeOf(u, w), extra = (w.blast > 0 ? ` 爆発${w.blast + E.sum(u, '爆発範囲', w)}` : '') + (w.fx ? ` ${w.fx}${w.fx === '鈍足' ? w.fxv : ''}` : '');
+      return `射程${w.rmin > 0 ? w.rmin + '–' : ''}${r} 扇${w.angle}° ${w.pow > 0 ? `威力${w.pow} ` : ''}命中${E.hitRate(st, u, w)} 消費${E.attackCost(u, w)} 待ち${w.wait}${extra}`;
+    }
+    if (w.cls === '防御') return `軽減${w.pow}% 扇${w.angle}° 消費${w.cost} 待ち${w.wait}`;
+    if (w.cls === '回避') return `回避+${w.pow} 扇${w.angle >= 360 ? '全周' : w.angle + '°'} 起動${E.startCost(u, w)}${w.fx ? ' ' + w.fx : ''}`;
+    return `${w.fx}${w.fxv ? ' ' + w.fxv : ''}(常時)`;
+  }
+  const clsOf = w => E.isAttack(w) ? 'atk' : w.cls === '防御' ? 'def' : w.cls === '回避' ? 'eva' : '';
+  const whoHtml = u => { const s = sqOf(u); return `<div class="who"><span class="chip" style="--c:${s.color}">${esc(s.abbr)}</span><b>${esc(u.name)}</b>${u.m.pos ? `<span class="chip plain">${esc(u.m.pos)}</span>` : ''}${u.help ? `<span class="chip plain">${esc(t('ヘルプ'))}</span>` : ''}</div>`; };
+  const bar = (label, v, max, extra) => `<div class="meter"><span>${esc(label)}</span><span class="track"><b style="width:${Math.max(0, Math.min(100, v / max * 100))}%"></b></span><span class="val">${Math.max(0, v)}/${max}${extra || ''}</span></div>`;
+
+  function planSteps(u) {
+    const out = []; let n = 0;
+    const flush = () => { if (n) { out.push(`${n}歩移動`); n = 0; } };
+    for (const c of u.plan) {
+      if (c.type === 'move') n++;
+      else { flush(); if (c.type === 'face') out.push(`${E.DIR_NAMES[c.dir]}を向く`); else if (c.type === 'set') { const w = (c.slot === 'main' ? u.m.mainOpts : u.m.subOpts)[c.idx]; out.push(`${c.slot === 'main' ? 'メイン' : 'サブ'}を${w ? w.name : 'なし'}に`); } else if (c.type === 'chase') { const e = unitById(c.target); out.push(`${t('追跡')}: ${e ? (visOf(e) === 'full' ? e.name : 'レーダー反応') : '?'}`); } }
+    }
+    flush(); return out;
+  }
+
+  function renderCmd() {
+    const p = $('#cmdPanel');
+    if (ui.rp.on) { p.innerHTML = `<h2>再生中</h2><p class="hint">${ui.watch ? `総当たりの試合(${esc(db.squads[ui.watch.a].name)} 対 ${esc(db.squads[ui.watch.b].name)})を再生しています。` : '記録した行動を再生しています。'}${st.over ? '両部隊のユニットをすべて表示しています。' : '試合中なので、相手は当時見えていた範囲だけ表示します。'}演習場の下の操作で、ターンの切り替え・一時停止・コマ送りができます。</p>`; return; }
+    if (st.over) { p.innerHTML = `<h2>試合終了</h2><p class="hint">演習場の下の「行動の再生」から、この試合をターンごとに見直せます。下の設定から演習・部隊を変えて次の試合を始められます。</p>`; return; }
+    if (!playing()) { p.innerHTML = `<h2>${ui.control === 'none' ? '観戦中' : 'AIに任せています'}</h2><p class="hint">両部隊ともAIが動きを設定しています。駒を選ぶと能力と射程を確認できます。</p>`; return; }
+    if (ui.phase === 'run') { p.innerHTML = `<h2>${esc(t('行動'))}</h2><p class="hint">全ユニットが同時に動いています。射程の扇に敵が入ると自動で攻撃し、行動力がなくなると止まります。</p>`; return; }
+    const u = ui.sel ? unitById(ui.sel) : null;
+    if (!u || !u.alive) {
+      const todo = st.units.filter(x => x.alive && mine(x) && !x.plan.length).length;
+      p.innerHTML = `<h2>${esc(t('設定'))}</h2>
+        <p class="hint">自分の駒(丸)を選び、動きを決めてください。未設定は ${todo} 体。何も設定しない駒は、今の向きと構えのままその場で待ち受けます。</p>
+        <ol class="steps"><li>黄色いマスを押すと、そこまでの経路を追加</li><li>向きと構え(メイン・サブ)を選ぶ。赤いマスが攻撃の射程</li><li>「行動開始」で両部隊が同時に動く</li></ol>
+        ${ui.msg ? `<p class="hint">${esc(ui.msg)}</p>` : ''}`;
+      return;
+    }
+    const e = pe(u), total = E.planEnd(st, u, []).ap, steps = planSteps(u);
+    const btn = (slot, w, i, cur) => `<button type="button" class="wbtn ${clsOf(w)}" data-slot="${slot}" data-idx="${i}" aria-pressed="${i === cur}"><b>${esc(w.name)}</b><span>${esc(trigLine(u, w))}</span></button>`;
+    const padCells = [7, 0, 1, 6, -1, 2, 5, 4, 3], arrows = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+    p.innerHTML = `<h2>${esc(t('設定'))}</h2>${whoHtml(u)}
+      ${bar(t('行動力'), e.ap, total, e.ap < total ? `<em>予定 −${total - e.ap}</em>` : '')}
+      ${u.m.mainOpts.length ? `<div class="slotrow"><span>メイン</span><div class="weapons">${u.m.mainOpts.map((w, i) => btn('main', w, i, e.mi)).join('')}</div></div>` : ''}
+      ${u.m.subOpts.length ? `<div class="slotrow"><span>サブ</span><div class="weapons">${u.m.subOpts.map((w, i) => btn('sub', w, i, e.si)).join('')}</div></div>` : ''}
+      <div class="facing">
+        <div class="pad" role="group" aria-label="向き">${padCells.map(d => d < 0 ? `<span>${E.DIR_NAMES[e.face]}</span>` : `<button type="button" data-dir="${d}" aria-pressed="${d === e.face}" aria-label="${E.DIR_NAMES[d]}を向く">${arrows[d]}</button>`).join('')}</div>
+        <label class="check" for="keepChk"><input type="checkbox" id="keepChk"${ui.keep ? ' checked' : ''}>向きを変えずに移動する</label>
+      </div>
+      <div class="acts">
+        <button type="button" class="btn${ui.chaseMode ? ' on' : ''}" data-act="chase">${ui.chaseMode ? '追う敵を選んでください' : esc(t('追跡'))}</button>
+        <button type="button" class="btn quiet" data-act="undo" ${u.plan.length ? '' : 'disabled'}>1つ戻す</button>
+        <button type="button" class="btn quiet" data-act="clear" ${u.plan.length ? '' : 'disabled'}>全部消す</button>
+        <button type="button" class="btn quiet" data-act="auto">おまかせ</button>
+      </div>
+      ${steps.length ? `<ol class="steps">${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : `<p class="hint">まだ何も設定していません。この駒はその場で待ち受けます。</p>`}
+      ${ui.msg ? `<p class="hint">${esc(ui.msg)}</p>` : ''}`;
+  }
+
+  function renderInfo() {
+    const p = $('#infoPanel'); const u = ui.inspect ? unitById(ui.inspect) : (ui.sel ? unitById(ui.sel) : null);
+    if (!u) { p.innerHTML = `<h2>ユニットの詳細</h2><p class="hint">駒か下の一覧を選ぶと、能力値・トリガー・スキルが出ます。</p>`; return; }
+    const v = visOf(u), d = disp[u.id];
+    if (v === 'blip') { p.innerHTML = `<h2>ユニットの詳細</h2><p class="hint">レーダーに映っている相手です。誰かの視界に入るまで正体は分かりません。</p>`; return; }
+    if (v === 'none' && d.alive) { p.innerHTML = `<h2>ユニットの詳細</h2><p class="hint">見失いました。</p>`; return; }
+    const s = u.m.st, stat = (k, val) => `<div class="stat"><span>${esc(t(k))}</span><b>${val}</b></div>`;
+    const cur = trigOf(u, d);
+    const tr = w => `<li><span>${cur.includes(w) ? '使用中' : w.cls === '移動' ? '常時' : '控え'}</span><div>${esc(w.name)}<small>${esc(trigLine(u, w))}</small></div></li>`;
+    const uniq = [...new Set(u.m.all)];
+    p.innerHTML = `<h2>ユニットの詳細</h2>${whoHtml(u)}
+      ${d.alive ? bar(t('耐久'), d.hp, u.max) : `<div class="who"><span class="chip plain">${esc(t('離脱'))}済み</span></div>`}
+      <div class="stats stats7">${stat('行動力', E.apMax(st, u))}${stat('トリオン', s.tri)}${stat('攻撃', s.atk)}${stat('防御', s.def)}${stat('回避', s.eva)}${stat('援護', s.sup)}${stat('技術', s.tec)}</div>
+      <ul class="trigs">${uniq.map(tr).join('')}</ul>
+      ${u.m.skills.length ? `<ul class="skills">${u.m.skills.map(k => `<li><b>${esc(k.name)}</b><span>${esc(k.desc.join(' / '))}</span></li>`).join('')}</ul>` : ''}
+      <p class="hint">${d.alive ? `向き ${E.DIR_NAMES[d.face]}　高さ ${E.H(st, d.x, d.y)}　` : ''}撃破 ${u.kills}</p>`;
+  }
+
+  function renderRoster() {
+    const card = team => {
+      const s = db.squads[st.teams[team]];
+      return `<div class="rcard" style="--c:${s.color}"><h3><i></i>${esc(s.name)}${team === 'A' && ui.control === 'A' && !ui.watch ? '(自分)' : ''}</h3>${st.units.filter(u => u.team === team).map(u => {
+        const d = disp[u.id], v = visOf(u), showHp = v === 'full';
+        const note = !d.alive ? `${t('離脱')}(${t('ターン')}${u.outTurn})` : team === 'A' && playing() && ui.phase === 'plan' ? (u.plan.length ? (pe(u).chase ? t('追跡') : '設定済み') : '未設定') : v === 'full' ? trigOf(u, d).map(w => w.name).join(' + ') : v === 'blip' ? 'レーダー反応' : '位置不明';
+        return `<button type="button" class="rrow${d.alive ? '' : ' out'}${ui.sel === u.id || ui.inspect === u.id ? ' sel' : ''}" data-id="${esc(u.id)}">
+          <span class="ps">${esc(u.m.pos)}</span>
+          <span class="nm">${esc(u.name)}${u.help ? ' ◆' : ''}<small>${esc(note)}</small></span>
+          <span class="tr"><span>${d.alive ? (showHp ? `${d.hp}/${u.max}` : '耐久 ?') : '—'}${team === 'A' && d.alive ? ` <em title="${esc(t('行動力'))}">⚡${d.ap}</em>` : ''}</span><span class="track"><b style="width:${showHp ? Math.max(0, d.hp / u.max * 100) : 0}%"></b></span></span>
+        </button>`;
+      }).join('')}</div>`;
+    };
+    $('#roster').innerHTML = card('A') + card('B');
+  }
+
+  function renderLog() { $('#log').innerHTML = ui.log.slice(-90).reverse().map(l => `<li class="${l.cls}"${l.color ? ` style="--c:${l.color}"` : ''}>${l.html}</li>`).join(''); }
+
+  function renderResult() {
+    const box = $('#result');
+    if (!st.over) { box.hidden = true; box.innerHTML = ''; return; }
+    const r = st.result, ex = st.ex, A = db.squads[st.teams.A], B = db.squads[st.teams.B], w = r.winner ? db.squads[st.teams[r.winner]] : null;
+    const row = (s, n, team) => `<tr><td><span class="nmcell" style="--c:${s.color}"><i></i>${esc(s.name)}</span></td><td class="n">${n} / ${st.units.filter(u => u.team === team).length}</td><td class="n">${st.units.filter(u => u.team === team).reduce((a, u) => a + u.kills, 0)}</td><td class="n"><b>${r.pts[team]}</b> pt</td></tr>`;
+    box.innerHTML = `<div class="result-box">
+      <p class="result-kicker">${esc(ex.name)}　${r.turns}${esc(t('ターン'))}終了　生存数の差 ${Math.abs(r.diff)}体(勝利条件 ${ex.need}体差以上)</p>
+      <h3>${w ? `<span style="--c:${w.color}">${esc(w.name)}</span> の勝ち` : '引き分け'}</h3>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>部隊</th><th class="n">生存</th><th class="n">撃破</th><th class="n">得点</th></tr></thead><tbody>${row(A, r.a, 'A')}${row(B, r.b, 'B')}</tbody></table></div>
+      <div class="result-acts"><button type="button" class="btn primary" data-act="replay">最初から再生</button><button type="button" class="btn" data-act="again">${ui.watch ? '設定の部隊で新しい試合' : '同じ設定でもう一度'}</button><button type="button" class="btn quiet" data-act="close">演習場を見る</button></div>
+    </div>`;
+    box.hidden = !!ui.resultClosed || ui.rp.on;
+  }
+
+  function renderSetup() {
+    const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
+    $('#exSel').innerHTML = db.exOrder.map(id => opt(id, db.exercises[id].name, id === ui.exercise)).join('');
+    $('#teamASel').innerHTML = db.squadOrder.map(id => opt(id, db.squads[id].name, id === ui.teamA)).join('');
+    $('#teamBSel').innerHTML = db.squadOrder.filter(id => id !== ui.teamA).map(id => opt(id, db.squads[id].name, id === ui.teamB)).join('');
+    $('#controlSel').value = ui.control;
+    const ex = db.exercises[ui.exercise];
+    $('#helpField').hidden = !ex.helpN || !ex.help.length;
+    $('#helpLabel').textContent = `${t('ヘルプ')}(${ex.helpN}体まで。選ばない分はランダム)`;
+    $('#helpPicks').innerHTML = ex.help.map(id => { const m = db.members[id]; return `<button type="button" class="pick" data-id="${esc(id)}" aria-pressed="${ui.helpA.includes(id)}" style="--c:var(--signal)"><i></i>${esc(m.name)}<small style="font-weight:500;color:var(--muted)">${esc(m.pos)}</small></button>`; }).join('');
+    const n = db.squads[ui.teamA].members.length;
+    $('#exNote').textContent = `${ex.name}: 基本ユニット ${ex.per}体×${n}人 + ${t('ヘルプ')}${ex.helpN}体 = ${ex.per * n + ex.helpN}体 / ${ex.turns}${t('ターン')} / 終了時の生存数に${ex.need}体以上の差で勝ち ${ex.win}pt、届かなければ引き分け ${ex.draw}pt、負け ${ex.lose}pt / ${ex.map}`;
+    $('#leagueEx').innerHTML = db.exOrder.map(id => opt(id, db.exercises[id].name, id === (ui.leagueEx || ui.exercise))).join('');
+  }
+
+  /* ---------- 設定の操作 ---------- */
+  function dropChase(u) { u.plan = u.plan.filter(c => c.type !== 'chase'); }
+  function addMoves(u, tx, ty) {
+    dropChase(u); const p = pe(u), path = E.pathTo(st, u, p.x, p.y, tx, ty, p.ap);
+    if (!path || !path.steps.length) return;
+    const seg = ++ui.seg; for (const s of path.steps) u.plan.push({ type: 'move', x: s.x, y: s.y, keep: ui.keep, seg });
+  }
+  function addFace(u, dir) { dropChase(u); const last = u.plan[u.plan.length - 1]; if (last && last.type === 'face') u.plan.pop(); if (pe(u).face !== dir) u.plan.push({ type: 'face', dir }); }
+  function addSet(u, slot, idx) {
+    dropChase(u); const last = u.plan[u.plan.length - 1];
+    if (last && last.type === 'set' && last.slot === slot) u.plan.pop();
+    const before = pe(u); if ((slot === 'main' ? before.mi : before.si) === idx) return;
+    u.plan.push({ type: 'set', slot, idx });
+    const after = pe(u);
+    if ((slot === 'main' ? after.mi : after.si) !== idx) { u.plan.pop(); ui.msg = `${t('行動力')}が足りず、このトリガーを起動できません。`; }
+  }
+  function undo(u) {
+    const last = u.plan[u.plan.length - 1]; if (!last) return;
+    if (last.type === 'move') { const seg = last.seg; while (u.plan.length && u.plan[u.plan.length - 1].type === 'move' && u.plan[u.plan.length - 1].seg === seg) u.plan.pop(); }
+    else u.plan.pop();
+  }
+  const refreshPlan = () => { renderTokens(); renderOverlay(); renderCmd(); renderRoster(); };
+
+  /* ---------- データ表 ---------- */
+  const isDirty = () => JSON.stringify(draft) !== JSON.stringify(tables);
+  const visLen = s => Array.from(String(s)).reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+
+  function renderData() {
+    $('#sheetTabs').innerHTML = D.SCHEMA.map(s => `<button type="button" role="tab" data-sheet="${s.name}" aria-selected="${s.name === ui.sheet}">${s.name}<small>${draft[s.name].length}</small></button>`).join('');
+    const s = schemaOf(ui.sheet), rows = draft[s.name], si = D.SCHEMA.indexOf(s);
+    $('#sheetNote').textContent = s.note;
+    const head = `<thead><tr><th class="rn"></th>${s.cols.map(([c, , hint]) => `<th title="${esc(hint || '')}">${esc(c)}</th>`).join('')}<th class="x"></th></tr></thead>`;
+    const widths = s.cols.map(([c, ty]) => {
+      if (ty === 'num') return Math.max(8, visLen(c) + 3);
+      const w = Math.max(visLen(c), ...rows.map(r => visLen(r[c]))) + 2;
+      return Math.max(6, Math.min(c === '説明' || c === '備考' ? 64 : 34, w));
+    });
+    const body = rows.map((r, i) => `<tr><th class="rn">${i + 1}</th>${s.cols.map(([c, ty], j) => {
+      const cls = ty === 'num' ? 'n' : ty === 'color' ? 'c' : (s.name === 'マップ' && c === '地形データ') ? 'm' : '';
+      return `<td class="${cls}" style="--cw:${widths[j] * (cls === 'm' ? .75 : .64)}em">${ty === 'color' ? `<i style="background:${/^#[0-9a-fA-F]{6}$/.test(r[c]) ? r[c] : 'transparent'}"></i>` : ''}<input id="cell-${si}-${i}-${j}" data-r="${i}" data-c="${j}" value="${esc(r[c])}" aria-label="${esc(c)} ${i + 1}行目" autocomplete="off" spellcheck="false"${ty === 'num' ? ' inputmode="decimal"' : ''}></td>`;
+    }).join('')}<td class="x"><button type="button" class="del" data-del="${i}" aria-label="${i + 1}行目を削除" title="この行を削除">×</button></td></tr>`).join('');
+    $('#sheet').innerHTML = head + `<tbody>${body}</tbody>`;
+    $('#colHelp').innerHTML = s.cols.filter(c => c[2]).map(([c, , hint]) => `<dt>${esc(c)}</dt><dd>${esc(hint)}</dd>`).join('');
+    renderApply();
+  }
+  function renderApply() {
+    const dirty = isDirty();
+    $('#applybar').classList.toggle('dirty', dirty);
+    $('#applyMsg').textContent = dirty ? 'まだ反映していない変更があります。' : (ui.applyNote || '表の内容はゲームに反映済みです。');
+    $('#applyBtn').disabled = !dirty; $('#revertBtn').disabled = !dirty;
+    const e = $('#errors'); e.hidden = !ui.errors.length;
+    e.innerHTML = ui.errors.slice(0, 12).map(x => `<li>${esc(x)}</li>`).join('') + (ui.errors.length > 12 ? `<li>ほか${ui.errors.length - 12}件</li>` : '');
+    [...$('#sheetTabs').children].forEach((b, i) => { b.lastElementChild.textContent = draft[D.SCHEMA[i].name].length; });
+  }
+  function applyDraft(note) {
+    const r = E.buildDB(draft, DEFAULT_RULES);
+    ui.errors = r.errors;
+    if (r.errors.length) { ui.applyNote = ''; renderApply(); return false; }
+    applyTables(clone(draft));
+    if (JSON.stringify(tables) === JSON.stringify(DEFAULTS)) store.del(LS_TABLES); else store.set(LS_TABLES, tables);
+    saveSettings();
+    ui.applyNote = note || '反映しました。「演習」画面で新しい試合が始まっています。';
+    startMatch(); renderData(); renderLeague();
+    return true;
+  }
+  function focusCell(r, c) { const n = document.getElementById(`cell-${D.SCHEMA.indexOf(schemaOf(ui.sheet))}-${r}-${c}`); if (n) { n.focus(); n.select(); } }
+  function blankRow(s) { const o = {}; for (const [c] of s.cols) o[c] = ''; return o; }
+  function tsvOf(name) {
+    const s = schemaOf(name);
+    return [s.cols.map(c => c[0]).join('\t')].concat(draft[name].map(r => s.cols.map(([c]) => String(r[c]).replace(/[\t\r\n]/g, ' ')).join('\t'))).join('\n');
+  }
+  function cellStr(v) { if (v === null || v === undefined) return ''; if (typeof v === 'number') return String(Math.round(v * 1e10) / 1e10); return String(v); }
+
+  async function importFile(file) {
+    let wb;
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+    catch (e) { ui.errors = ['このファイルは読めませんでした。.xlsx 形式で保存し直してから読み込んでください。']; renderApply(); return; }
+    const found = [], missing = [];
+    for (const s of D.SCHEMA) {
+      const ws = wb.Sheets[s.name]; if (!ws) { missing.push(s.name); continue; }
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+      const head = (aoa[0] || []).map(h => String(h).trim());
+      const idx = s.cols.map(([c]) => head.indexOf(c));
+      const rows = [];
+      for (let i = 1; i < aoa.length; i++) {
+        const a = aoa[i]; if (!a || a.every(v => String(v).trim() === '')) continue;
+        const o = {}; s.cols.forEach(([c], j) => { o[c] = idx[j] < 0 ? '' : cellStr(a[idx[j]]); });
+        rows.push(o);
+      }
+      draft[s.name] = rows; found.push(s.name);
+    }
+    if (!found.length) { ui.errors = [`読み込める表が見つかりませんでした。シート名は ${D.SCHEMA.map(s => s.name).join(' / ')} にしてください。`]; renderData(); return; }
+    const note = `${file.name} から ${found.length}表を読み込んで反映しました。${missing.length ? `(${missing.join('・')} はファイルに無かったので今のまま)` : ''}`;
+    if (!applyDraft(note)) renderData();
+  }
+
+  async function exportXlsx() {
+    const wb = XLSX.utils.book_new();
+    for (const s of D.SCHEMA) {
+      const aoa = [s.cols.map(c => c[0])];
+      for (const r of draft[s.name]) aoa.push(s.cols.map(([c, ty]) => (ty === 'num' && r[c] !== '' && isFinite(Number(r[c]))) ? Number(r[c]) : r[c]));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = s.cols.map(([c, ty]) => ({ wch: ty === 'num' ? 10 : Math.max(8, Math.min(48, Math.max(visLen(c), ...draft[s.name].map(r => visLen(r[c]))) + 2)) }));
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    }
+    const help = [['表', '列', '説明']];
+    for (const s of D.SCHEMA) { help.push([s.name, '', s.note]); for (const [c, , hint] of s.cols) help.push([s.name, c, hint || '']); }
+    const hs = XLSX.utils.aoa_to_sheet(help); hs['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, hs, '説明');
+    const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    try { await downloads.save({ filename: '戦闘シミュレーション演習データ.xlsx', data: out }); $('#copyMsg').textContent = 'Excelファイルを書き出しました。'; }
+    catch (e) { $('#copyMsg').textContent = (e && e.code === 'declined') ? '書き出しをやめました。' : 'この画面では書き出せませんでした。「この表をコピー」で表計算ソフトに貼り付けてください。'; }
+  }
+
+  /* ---------- 総当たり ---------- */
+  function runLeague(exId, rounds) {
+    if (ui.leagueRunning) return;
+    ui.leagueRunning = true; ui.leagueEx = exId;
+    const ids = db.squadOrder.slice(), mydb = db, tab = {}, mem = {};
+    ids.forEach(s => { tab[s] = { w: 0, l: 0, d: 0, pts: 0, surv: 0, n: 0 }; });
+    const games = [];
+    for (let r = 0; r < rounds; r++) for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) games.push((r + i + j) % 2 ? [ids[j], ids[i]] : [ids[i], ids[j]]);
+    let done = 0, draws = 0; const btn = $('#leagueBtn'); btn.disabled = true;
+    const list = [], first = ids.length * (ids.length - 1) / 2;
+    const step = () => {
+      const t0 = Date.now();
+      while (done < games.length && Date.now() - t0 < 60) {
+        const [a, b] = games[done++], seed = (Math.random() * 4294967296) >>> 0, m = E.newMatch(mydb, { exercise: exId, teamA: a, teamB: b, seed }), res = E.runAuto(m);
+        if (list.length < first) list.push({ a, b, seed, ra: res.a, rb: res.b, winner: res.winner });
+        if (!res.winner) draws++;
+        for (const [team, sq] of [['A', a], ['B', b]]) { const x = tab[sq]; x.n++; x.pts += res.pts[team]; x.surv += team === 'A' ? res.a : res.b; if (!res.winner) x.d++; else if (res.winner === team) x.w++; else x.l++; }
+        for (const u of m.units) { const x = mem[u.m.id] || (mem[u.m.id] = { name: u.m.name, squad: u.m.squad, pos: u.m.pos, n: 0, k: 0, s: 0, d: 0 }); x.n++; x.k += u.kills; x.s += u.alive ? 1 : 0; x.d += u.dealt; }
+      }
+      btn.textContent = `実施中… ${done}/${games.length}`;
+      if (done < games.length && mydb === db) { setTimeout(step, 0); return; }
+      ui.leagueRunning = false; btn.disabled = false; btn.textContent = '総当たりを実施';
+      if (mydb === db) { ui.league = { exId, rounds, games: done, draws, tab, mem, list }; renderLeague(); }
+    };
+    setTimeout(step, 0);
+  }
+
+  function renderLeague() {
+    const out = $('#leagueOut'), L = ui.league;
+    if (!L) { out.innerHTML = '<div class="empty">まだ実施していません。「総当たりを実施」を押すと、各部隊が他の全部隊と対戦した順位表(勝ち・負け・引き分け・得点)と、ユニットごとの撃破数がここに出ます。</div>'; return; }
+    const ex = db.exercises[L.exId], rows = Object.entries(L.tab).sort((a, b) => b[1].pts - a[1].pts);
+    let rank = 0, prev = null;
+    const top = Math.max(1, rows[0][1].pts);
+    out.innerHTML = `<p class="summary">${esc(ex.name)}　${L.rounds}巡・${L.games}試合　引き分け ${Math.round(L.draws / L.games * 100)}%</p>
+      <div class="panel"><h2>順位表</h2><div class="tblwrap"><table class="tbl"><thead><tr><th class="n">順位</th><th>部隊</th><th class="n">勝</th><th class="n">敗</th><th class="n">分</th><th>得点</th><th class="n">平均生存</th></tr></thead><tbody>
+      ${rows.map(([id, x], i) => { if (x.pts !== prev) { rank = i + 1; prev = x.pts; } const q = db.squads[id]; return `<tr style="--c:${q.color}"><td class="n">${rank}位</td><td><span class="nmcell"><i></i>${esc(q.name)}</span></td><td class="n">${x.w}</td><td class="n">${x.l}</td><td class="n">${x.d}</td><td><div class="rate"><span>${x.pts}</span><div class="track"><b style="width:${x.pts / top * 100}%"></b></div></div></td><td class="n">${(x.surv / x.n).toFixed(2)}</td></tr>`; }).join('')}
+      </tbody></table></div></div>
+      <div class="panel"><h2>試合の一覧${L.rounds > 1 ? '(1巡目)' : ''}</h2><p class="hint">「再生」を押すと、その試合を「演習」画面で最初から見られます。</p><div class="tblwrap"><table class="tbl"><thead><tr><th>部隊</th><th class="n">生存</th><th></th><th class="n">生存</th><th>部隊</th><th>結果</th><th></th></tr></thead><tbody>
+      ${L.list.map((g, i) => { const A = db.squads[g.a], B = db.squads[g.b]; return `<tr><td><span class="nmcell" style="--c:${A.color}"><i></i>${esc(A.name)}</span></td><td class="n">${g.ra}</td><td>対</td><td class="n">${g.rb}</td><td><span class="nmcell" style="--c:${B.color}"><i></i>${esc(B.name)}</span></td><td>${g.winner ? esc(db.squads[g.winner === 'A' ? g.a : g.b].abbr) + ' の勝ち' : '引き分け'}</td><td><button type="button" class="btn quiet mini" data-game="${i}">再生</button></td></tr>`; }).join('')}
+      </tbody></table></div></div>
+      <div class="panel"><h2>ユニットごと(1体・1試合あたり)</h2><div class="tblwrap"><table class="tbl"><thead><tr><th>ユニット</th><th>部隊</th><th class="n">出場</th><th class="n">撃破</th><th class="n">生存率</th><th class="n">与ダメージ</th></tr></thead><tbody>
+      ${Object.values(L.mem).sort((a, b) => b.k / b.n - a.k / a.n).map(m => { const q = db.squads[m.squad]; return `<tr style="--c:${q ? q.color : 'var(--signal)'}"><td><span class="nmcell"><i></i>${esc(m.name)}</span></td><td>${q ? esc(q.abbr) : esc(t('ヘルプ'))}</td><td class="n">${m.n}</td><td class="n">${(m.k / m.n).toFixed(2)}</td><td class="n">${Math.round(m.s / m.n * 100)}%</td><td class="n">${Math.round(m.d / m.n)}</td></tr>`; }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  /* ---------- 操作 ---------- */
+  const TABS = ['match', 'data', 'league'];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'match';
+    for (const k of TABS) { $('#tab-' + k).hidden = k !== name; $('#tabbtn-' + k).setAttribute('aria-selected', String(k === name)); }
+    if (name === 'data') renderData();
+    if (name === 'league') renderLeague();
+  }
+
+  function wire() {
+    $('.tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (!b) return; showTab(b.dataset.tab); try { history.replaceState(null, '', '#' + b.dataset.tab); } catch (err) { /* 無視 */ } });
+
+    $('#cells').addEventListener('click', e => {
+      const c = e.target.closest('.cell'); if (!c) return;
+      const u = ui.sel ? unitById(ui.sel) : null;
+      if (ui.inspect) { ui.inspect = null; renderAll(); return; }
+      if (!u || !u.alive || ui.phase !== 'plan' || !playing() || !ui.field) return;
+      const x = +c.dataset.x, y = +c.dataset.y, b = ui.field.best[y * st.w + x];
+      if (!(b < Infinity) || b === 0) return;
+      ui.msg = ''; ui.chaseMode = false; addMoves(u, x, y); refreshPlan();
+    });
+    $('#units').addEventListener('click', e => {
+      const b = e.target.closest('.unit'); if (!b) return; const u = unitById(b.dataset.id);
+      const sel = ui.sel ? unitById(ui.sel) : null;
+      if (ui.chaseMode && sel && !mine(u)) { dropChase(sel); sel.plan.push({ type: 'chase', target: u.id }); ui.chaseMode = false; ui.msg = ''; refreshPlan(); return; }
+      if (mine(u) && playing()) { ui.sel = u.id; ui.inspect = null; ui.chaseMode = false; ui.msg = ''; }
+      else ui.inspect = ui.inspect === u.id ? null : u.id;
+      renderAll();
+    });
+    $('#cmdPanel').addEventListener('click', e => {
+      const u = ui.sel ? unitById(ui.sel) : null; if (!u || ui.phase !== 'plan' || !playing()) return;
+      const w = e.target.closest('.wbtn'), d = e.target.closest('[data-dir]'), a = e.target.closest('[data-act]');
+      ui.msg = '';
+      if (w) addSet(u, w.dataset.slot, +w.dataset.idx);
+      else if (d) addFace(u, +d.dataset.dir);
+      else if (a) {
+        const act = a.dataset.act;
+        if (act === 'chase') { ui.chaseMode = !ui.chaseMode; if (ui.chaseMode && !st.units.some(x => !mine(x) && visOf(x) !== 'none')) { ui.chaseMode = false; ui.msg = '視界にもレーダーにも敵がいません。'; } }
+        else if (act === 'undo') undo(u);
+        else if (act === 'clear') u.plan = [];
+        else if (act === 'auto') E.planAI(st, 'A', x => x === u);
+      } else return;
+      refreshPlan();
+    });
+    $('#cmdPanel').addEventListener('change', e => { if (e.target.id === 'keepChk') ui.keep = e.target.checked; });
+    $('#roster').addEventListener('click', e => {
+      const b = e.target.closest('.rrow'); if (!b) return; const u = unitById(b.dataset.id);
+      if (mine(u) && playing() && u.alive) { ui.sel = u.id; ui.inspect = null; } else ui.inspect = u.id;
+      ui.chaseMode = false; renderAll();
+    });
+    $('#result').addEventListener('click', e => {
+      const a = e.target.closest('[data-act]'); if (!a) return;
+      if (a.dataset.act === 'again') startMatch(); else if (a.dataset.act === 'replay') rpEnter(0, true); else { ui.resultClosed = true; $('#result').hidden = true; }
+    });
+    $('#rpBar').addEventListener('click', e => {
+      const tb = e.target.closest('[data-turn]'), b = e.target.closest('[data-rp]');
+      if (tb) { const on = ui.rp.on; rpEnter(+tb.dataset.turn, true); if (!on) $('#rpBar').scrollIntoView({ block: 'nearest' }); return; }
+      if (!b) return; const act = b.dataset.rp;
+      if (act === 'all') rpEnter(0, true);
+      else if (act === 'toggle') { if (ui.rp.playing) rpPause(); else rpPlay(); }
+      else if (act === 'step') { ui.rp.playing = false; rpPlay(true); }
+      else if (act === 'first') { ui.rp.playing = false; rpSeek(0, 0); }
+      else if (act === 'exit') rpExit();
+    });
+    $('#rpRange').addEventListener('input', e => { if (ui.rp.on) rpSeekPos(+e.target.value); });
+    $('#leagueOut').addEventListener('click', e => { const b = e.target.closest('[data-game]'); if (!b || !ui.league || ui.leagueRunning) return; watchGame(ui.league.list[+b.dataset.game], ui.league.exId); });
+    $('#goBtn').addEventListener('click', () => go());
+    $('#autoAllBtn').addEventListener('click', () => { if (ui.phase !== 'plan' || !playing()) return; E.planAI(st, 'A', u => !u.plan.length); ui.msg = '未設定の駒にAIの案を入れました。選んで直せます。'; refreshPlan(); });
+    $('#speedSel').addEventListener('change', e => { ui.speed = +e.target.value || 1; saveSettings(); });
+    $('#skipBtn').addEventListener('click', () => { if (st.over) return; ui.skip = true; ui.autoAll = true; ui.sel = null; if (ui.phase === 'plan') go(); renderPhase(); });
+
+    const setupChanged = () => { fixHelp(); renderSetup(); };
+    $('#exSel').addEventListener('change', e => { ui.exercise = e.target.value; setupChanged(); });
+    $('#teamASel').addEventListener('change', e => { ui.teamA = e.target.value; if (ui.teamB === ui.teamA) ui.teamB = db.squadOrder.find(s => s !== ui.teamA); setupChanged(); });
+    $('#teamBSel').addEventListener('change', e => { ui.teamB = e.target.value; });
+    $('#controlSel').addEventListener('change', e => { ui.control = e.target.value; });
+    $('#helpPicks').addEventListener('click', e => {
+      const b = e.target.closest('.pick'); if (!b) return; const id = b.dataset.id, ex = db.exercises[ui.exercise];
+      if (ui.helpA.includes(id)) ui.helpA = ui.helpA.filter(x => x !== id); else { ui.helpA.push(id); if (ui.helpA.length > ex.helpN) ui.helpA.shift(); }
+      renderSetup();
+    });
+    $('#startBtn').addEventListener('click', () => { saveSettings(); startMatch(); $('#versus').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+
+    // データ表
+    $('#sheetTabs').addEventListener('click', e => { const b = e.target.closest('button[data-sheet]'); if (!b) return; ui.sheet = b.dataset.sheet; $('#copyBox').hidden = true; $('#copyMsg').textContent = ''; renderData(); });
+    const sheet = $('#sheet');
+    sheet.addEventListener('input', e => {
+      const i = e.target; if (i.tagName !== 'INPUT') return;
+      const s = schemaOf(ui.sheet), col = s.cols[+i.dataset.c];
+      draft[s.name][+i.dataset.r][col[0]] = i.value;
+      if (col[1] === 'color') { const sw = i.previousElementSibling; if (sw) sw.style.background = /^#[0-9a-fA-F]{6}$/.test(i.value.trim()) ? i.value.trim() : 'transparent'; }
+      ui.applyNote = ''; renderApply();
+    });
+    sheet.addEventListener('paste', e => {
+      const i = e.target; if (i.tagName !== 'INPUT') return;
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      if (!/[\t\n]/.test(text.replace(/[\r\n]+$/, ''))) return;
+      e.preventDefault();
+      const s = schemaOf(ui.sheet), rows = draft[s.name];
+      const lines = text.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map(l => l.split('\t'));
+      const r0 = +i.dataset.r, c0 = +i.dataset.c;
+      lines.forEach((cells, dr) => {
+        while (rows.length <= r0 + dr) rows.push(blankRow(s));
+        cells.forEach((v, dc) => { const col = s.cols[c0 + dc]; if (col) rows[r0 + dr][col[0]] = v.trim(); });
+      });
+      ui.applyNote = ''; renderData(); focusCell(r0, c0);
+    });
+    sheet.addEventListener('keydown', e => {
+      const i = e.target; if (i.tagName !== 'INPUT') return;
+      const r = +i.dataset.r, c = +i.dataset.c;
+      if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); focusCell(r + 1, c); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); focusCell(r - 1, c); }
+    });
+    sheet.addEventListener('click', e => { const b = e.target.closest('.del'); if (!b) return; draft[ui.sheet].splice(+b.dataset.del, 1); ui.applyNote = ''; renderData(); });
+    $('#addRowBtn').addEventListener('click', () => { const s = schemaOf(ui.sheet); draft[s.name].push(blankRow(s)); renderData(); focusCell(draft[s.name].length - 1, 0); });
+    $('#copyBtn').addEventListener('click', () => {
+      const text = tsvOf(ui.sheet), msg = $('#copyMsg'), box = $('#copyBox');
+      const fallback = () => { box.hidden = false; box.value = text; box.focus(); box.select(); msg.textContent = '下の枠の内容をコピーして、表計算ソフトに貼り付けてください。'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => { box.hidden = true; msg.textContent = `「${ui.sheet}」をコピーしました。表計算ソフトにそのまま貼り付けられます。`; }, fallback);
+      else fallback();
+    });
+    $('#applyBtn').addEventListener('click', () => applyDraft());
+    $('#revertBtn').addEventListener('click', () => { draft = clone(tables); ui.errors = []; ui.applyNote = '変更を取り消しました。'; renderData(); });
+    $('#resetBtn').addEventListener('click', () => { draft = clone(DEFAULTS); ui.errors = []; ui.applyNote = ''; renderData(); if (!isDirty()) { ui.applyNote = 'すでに初期値です。'; renderApply(); } });
+    $('#importFile').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
+    $('#exportBtn').addEventListener('click', () => { if (downloads) exportXlsx(); });
+    $('#leagueBtn').addEventListener('click', () => runLeague($('#leagueEx').value, +$('#leagueN').value || 1));
+  }
+
+  /* ---------- 起動 ---------- */
+  function start() {
+    const set = store.get(LS_SET) || {};
+    for (const k of ['exercise', 'teamA', 'teamB']) if (typeof set[k] === 'string') ui[k] = set[k];
+    if (Array.isArray(set.helpA)) ui.helpA = set.helpA.filter(x => typeof x === 'string');
+    if (set.control === 'A' || set.control === 'none') ui.control = set.control;
+    if (set.speed) ui.speed = +set.speed || 1;
+    applyTables(loadTables());
+    const sp = $('#speedSel'); if ([...sp.options].some(o => +o.value === ui.speed)) sp.value = String(ui.speed); else ui.speed = 1;
+    wire();
+    if (typeof XLSX === 'undefined') $('#importLabel').hidden = true;
+    startMatch();
+    showTab((location.hash || '').replace('#', '') || 'match');
+    const use = window.claude && typeof window.claude.use === 'function' ? window.claude.use('downloads') : Promise.resolve(null);
+    Promise.resolve(use).then(ns => { if (ns && typeof XLSX !== 'undefined') { downloads = ns; $('#exportBtn').hidden = false; } }, () => {});
+  }
+
+  window.__sim = { get state() { return st; }, ui, E, get disp() { return disp; } };
+  start();
+})();
+
+</script>
+
+</body></html>
